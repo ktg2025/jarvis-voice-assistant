@@ -9,13 +9,17 @@ from urllib.parse import unquote, parse_qs, urlparse
 import httpx
 from playwright.async_api import async_playwright
 
-_playwright     = None
-_browser        = None
-_context        = None
+_playwright       = None
+_browser          = None
+_context          = None
 _gmail_playwright = None
-_gmail_context  = None
+_gmail_context    = None
+_movie_playwright = None
+_movie_context    = None
 
-BROWSER_PROFILE = "/home/guru/.config/jarvis-browser"
+BROWSER_PROFILE       = "/home/guru/.config/jarvis-browser"
+MOVIE_PROFILE         = "/home/guru/.config/jarvis-movie-browser"
+MOVIE_URL             = "https://moviez.naranja.li/web/index.html#!/videos?serverId=e0c819e7a4544ad3bfc83b699503669f&parentId=19"
 
 def _bring_to_front():
     try:
@@ -156,6 +160,104 @@ async def open_url(url: str):
         # Fallback: open in Firefox directly
         subprocess.Popen(["firefox", url])
     return {"success": True, "url": url}
+
+async def fetch_youtube_video(query: str) -> str:
+    """Search YouTube and open the first result in Firefox."""
+    ctx  = await _get_browser()
+    page = await ctx.new_page()
+    try:
+        search_url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+        await page.goto(search_url, timeout=20000)
+        _bring_to_front()
+        await page.wait_for_timeout(2000)
+        # Click first video result
+        link = page.locator('a#video-title').first
+        if await link.count() > 0:
+            title = await link.get_attribute("title") or query
+            await link.click()
+            await page.wait_for_timeout(1000)
+            _bring_to_front()
+            return f"Spiele YouTube-Video: {title}"
+        return f"Kein YouTube-Video gefunden für: {query}"
+    except Exception as e:
+        return f"YouTube-Fehler: {e}"
+
+async def _get_movie_browser():
+    global _movie_playwright, _movie_context
+    if _movie_context is None:
+        import os
+        os.makedirs(MOVIE_PROFILE, exist_ok=True)
+        _movie_playwright = await async_playwright().start()
+        _movie_context = await _movie_playwright.firefox.launch_persistent_context(
+            MOVIE_PROFILE, headless=False, no_viewport=True,
+        )
+    return _movie_context
+
+async def fetch_movies(query: str = "") -> str:
+    """List or search movies on the NeueFlix server."""
+    ctx  = await _get_movie_browser()
+    page = await ctx.new_page()
+    try:
+        await page.goto(MOVIE_URL, timeout=20000)
+        _bring_to_front()
+        await page.wait_for_timeout(4000)
+
+        # Check if login needed
+        if "einloggen" in (await page.evaluate("() => document.body.innerText")).lower():
+            return "Bitte einmalig auf NeueFlix einloggen — das Fenster ist geöffnet."
+
+        # Extract movie titles
+        titles = await page.evaluate("""() => {
+            const els = document.querySelectorAll('.cardText, .card-text, h3, .itemName, [data-testid="card-title"]');
+            return Array.from(els).map(e => e.innerText.trim()).filter(t => t.length > 1).slice(0, 30);
+        }""")
+
+        if not titles:
+            # Fallback: grab all visible text blocks
+            text = await page.evaluate("() => document.body.innerText")
+            return f"Filme auf NeueFlix:\n{text[:1500]}"
+
+        if query:
+            q = query.lower()
+            titles = [t for t in titles if q in t.lower()] or titles
+
+        return "Verfügbare Filme:\n" + "\n".join(f"• {t}" for t in titles[:15])
+    except Exception as e:
+        return f"Film-Fehler: {e}"
+    finally:
+        await page.close()
+
+async def play_movie(title: str) -> str:
+    """Find and play a movie by title on NeueFlix."""
+    ctx  = await _get_movie_browser()
+    page = await ctx.new_page()
+    try:
+        await page.goto(MOVIE_URL, timeout=20000)
+        _bring_to_front()
+        await page.wait_for_timeout(4000)
+
+        if "einloggen" in (await page.evaluate("() => document.body.innerText")).lower():
+            return "Bitte zuerst einloggen."
+
+        # Find and click the movie card
+        cards = page.locator('.cardText, .card-text, .itemName')
+        count = await cards.count()
+        for i in range(count):
+            card_text = await cards.nth(i).inner_text()
+            if title.lower() in card_text.lower():
+                await cards.nth(i).click()
+                await page.wait_for_timeout(2000)
+                # Click play button if visible
+                play_btn = page.locator('[data-action="play"], .btnPlay, button:has-text("Play"), button:has-text("Abspielen")').first
+                if await play_btn.count() > 0:
+                    await play_btn.click()
+                _bring_to_front()
+                return f"Spiele: {card_text.strip()}"
+        return f"Film nicht gefunden: {title}"
+    except Exception as e:
+        return f"Wiedergabe-Fehler: {e}"
+    finally:
+        await page.close()
 
 async def close():
     global _playwright, _browser, _context

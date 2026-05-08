@@ -118,7 +118,10 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:NEWS] - Aktuelle Weltnachrichten abrufen.
 [ACTION:MUSIC] suchbegriff - Musik von YouTube abspielen.
 [ACTION:EMAIL] - Gmail öffnen und neue E-Mails vorlesen.
-[ACTION:TASK] aufgabe1, aufgabe2, aufgabe3 - Aufgabenliste als ODT-Dokument erstellen und in LibreOffice öffnen. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
+[ACTION:TASK] aufgabe1, aufgabe2, aufgabe3 - Aufgabenliste als ODT-Dokument erstellen und in LibreOffice öffnen.
+[ACTION:VIDEO] suchbegriff - YouTube-Video suchen und in Firefox abspielen. Nutze diese Aktion wenn nach einem Video, YouTube oder einem Clip gefragt wird.
+[ACTION:MOVIE] suchbegriff - Filme auf NeueFlix suchen und auflisten. Nutze diese Aktion wenn nach Filmen gefragt wird. Optional mit Suchbegriff: [ACTION:MOVIE] Action. Ohne Suchbegriff: [ACTION:MOVIE]
+[ACTION:PLAY] filmtitel - Einen bestimmten Film auf NeueFlix abspielen. Nutze diese Aktion wenn der Nutzer einen konkreten Film abspielen möchte. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
 
 WENN {USER_NAME} "Jarvis activate" sagt:
 - Begruesse ihn passend zur Tageszeit (aktuelle Zeit: {{time}}).
@@ -235,6 +238,15 @@ async def execute_action(action: dict) -> str:
 
     elif t == "TASK":
         return await create_task_document(p)
+
+    elif t == "VIDEO":
+        return await browser_tools.fetch_youtube_video(p)
+
+    elif t == "MOVIE":
+        return await browser_tools.fetch_movies(p)
+
+    elif t == "PLAY":
+        return await browser_tools.play_movie(p)
 
     elif t == "MUSIC":
         return await play_music(p)
