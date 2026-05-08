@@ -51,16 +51,7 @@ async def search_and_read(query: str) -> dict:
             await page.wait_for_timeout(2000)
             title = await page.title()
             url = page.url
-            text = await page.evaluate("""
-                () => {
-                    const selectors = ['main', 'article', '[role="main"]', '.content', '#content', 'body'];
-                    for (const sel of selectors) {
-                        const el = document.querySelector(sel);
-                        if (el && el.innerText.trim().length > 100) return el.innerText.trim();
-                    }
-                    return document.body?.innerText?.trim() || '';
-                }
-            """)
+            text = await page.evaluate("() => document.body.innerText")
             return {"title": title, "url": url, "content": text[:3000]}
         else:
             text = await page.evaluate("() => document.body.innerText")
@@ -75,16 +66,7 @@ async def visit(url: str, max_chars: int = 5000) -> dict:
         await page.goto(url, timeout=20000, wait_until="domcontentloaded")
         await page.wait_for_timeout(1500)
         _bring_to_front()
-        text = await page.evaluate("""
-            () => {
-                const selectors = ['main', 'article', '[role="main"]', '.content', '#content', 'body'];
-                for (const sel of selectors) {
-                    const el = document.querySelector(sel);
-                    if (el && el.innerText.trim().length > 100) return el.innerText.trim();
-                }
-                return document.body?.innerText?.trim() || '';
-            }
-        """)
+        text = await page.evaluate("() => document.body.innerText")
         title = await page.title()
         return {"title": title, "url": url, "content": text[:max_chars]}
     except Exception as e:
@@ -99,19 +81,7 @@ async def fetch_news() -> str:
         await page.goto("https://www.tagesschau.de/", timeout=20000)
         _bring_to_front()
         await page.wait_for_timeout(3000)
-        text = await page.evaluate("""
-            () => {
-                const teasers = document.querySelectorAll('.teaser__headline, .teaser-xs__headline, h2, h3');
-                const headlines = [];
-                teasers.forEach(el => {
-                    const t = el.innerText.trim();
-                    if (t.length > 10 && t.length < 200) headlines.push(t);
-                });
-                return headlines.slice(0, 15).join('\n');
-            }
-        """)
-        if not text or len(text) < 50:
-            text = await page.evaluate("() => document.body.innerText")
+        text = await page.evaluate("() => document.body.innerText")
         return f"Tagesschau Nachrichten:\n{text[:3000]}"
     except Exception as e:
         return f"Nachrichten konnten nicht geladen werden: {e}"
