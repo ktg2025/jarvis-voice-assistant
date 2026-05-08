@@ -37,11 +37,19 @@ def drain_responses():
             if t == "audio_start":
                 with lock:
                     audio_playing += 1
+                # Fallback: unmute after duration even if audio_end never arrives
+                duration = float(msg.get("duration", 10))
+                threading.Timer(duration, _force_unmute_one).start()
             elif t == "audio_end":
                 with lock:
                     audio_playing = max(0, audio_playing - 1)
         except Exception:
             time.sleep(0.1)
+
+def _force_unmute_one():
+    global audio_playing
+    with lock:
+        audio_playing = max(0, audio_playing - 1)
 
 def connect_ws():
     global ws, audio_playing

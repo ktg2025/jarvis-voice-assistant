@@ -412,9 +412,10 @@ async def broadcast(payload: dict):
     connected_clients.difference_update(dead)
 
 async def broadcast_audio(text: str, audio: bytes):
-    """Broadcast audio_start, then response, to mute whisper before playback."""
+    """Broadcast audio_start (with duration), then response."""
     if audio:
-        await broadcast({"type": "audio_start"})
+        duration = round(len(audio) / 44100 + 1.5, 1)  # WAV 22050Hz 16-bit + buffer
+        await broadcast({"type": "audio_start", "duration": duration})
     await broadcast({
         "type":  "response",
         "text":  text,
