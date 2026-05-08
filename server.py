@@ -27,11 +27,22 @@ USER_ADDRESS        = config.get("user_address", "Sir")
 CITY                = config.get("city", "Hamburg")
 TASKS_FILE          = config.get("obsidian_inbox_path", "")
 
-# ─── Groq Einstellungen ────────────────────────────────────────────────────────
-GROQ_API_KEY        = config.get("groq_api_key", "")
-GROQ_MODEL          = config.get("groq_model", "llama-3.3-70b-versatile")
-GROQ_VISION_MODEL   = config.get("groq_vision_model", "meta-llama/llama-4-scout-17b-16e-instruct")
-GROQ_BASE_URL       = "https://api.groq.com/openai/v1"
+# ─── LLM Provider Config ──────────────────────────────────────────────────────
+ANTHROPIC_API_KEY = config.get("anthropic_api_key", "")
+ANTHROPIC_MODEL   = config.get("anthropic_model", "claude-haiku-4-5")
+GROQ_API_KEY      = config.get("groq_api_key", "")
+GROQ_MODEL        = config.get("groq_model", "llama-3.3-70b-versatile")
+GROQ_BASE_URL     = "https://api.groq.com/openai/v1"
+GROQ_VISION_MODEL = config.get("groq_vision_model", "meta-llama/llama-4-scout-17b-16e-instruct")
+VENICE_API_KEY    = config.get("venice_api_key", "")
+VENICE_MODEL      = config.get("venice_model", "llama-3.3-70b")
+VENICE_BASE_URL   = "https://api.venice.ai/api/v1"
+
+import anthropic as _anthropic
+_claude = _anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+# Active provider — can be switched at runtime
+ACTIVE_PROVIDER = config.get("active_provider", "venice")  # "claude" | "venice" | "groq"
 
 http = httpx.AsyncClient(timeout=60)
 app  = FastAPI()
@@ -119,7 +130,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:MUSIC] suchbegriff - Musik von YouTube abspielen.
 [ACTION:EMAIL] - Gmail öffnen und neue E-Mails vorlesen.
 [ACTION:TASK] aufgabe1, aufgabe2, aufgabe3 - Aufgabenliste als ODT-Dokument erstellen und in LibreOffice öffnen.
-[ACTION:VIDEO] suchbegriff - YouTube-Video suchen und in Firefox abspielen. Nutze diese Aktion wenn nach einem Video, YouTube oder einem Clip gefragt wird.
+[ACTION:VIDEO] suchbegriff - YouTube-Video suchen und in Firefox abspielen. Nutze diese Aktion wenn nach einem Video, YouTube oder einem Clip gefragt wird. WICHTIG: Schreibe den Suchbegriff EXAKT so wie der Nutzer es gesagt hat — NIEMALS übersetzen oder verändern.
 [ACTION:MOVIE] suchbegriff - Filme auf NeueFlix suchen und auflisten. Nutze diese Aktion wenn nach Filmen gefragt wird. Optional mit Suchbegriff: [ACTION:MOVIE] Action. Ohne Suchbegriff: [ACTION:MOVIE]
 [ACTION:PLAY] filmtitel - Einen bestimmten Film auf NeueFlix abspielen. Nutze diese Aktion wenn der Nutzer einen konkreten Film abspielen möchte. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
 
@@ -142,41 +153,39 @@ def extract_action(text: str):
         return clean, {"type": match.group(1), "payload": match.group(2).strip()}
     return text, None
 
-# ─── Groq API Call ─────────────────────────────────────────────────────────────
+# ─── LLM Call (routes to active provider) ─────────────────────────────────────
 async def call_groq(system: str, messages: list, max_tokens: int = 400) -> str:
-    if not GROQ_API_KEY:
-        raise RuntimeError(
-            "Kein Groq API Key! Bitte 'groq_api_key' in config.json eintragen. "
-            "Kostenlos registrieren auf: https://console.groq.com"
-        )
+    global ACTIVE_PROVIDER
+    loop = asyncio.get_event_loop()
 
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": [{"role": "system", "content": system}] + messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.7,
-    }
+    if ACTIVE_PROVIDER == "claude":
+        try:
+            response = await loop.run_in_executor(None, lambda: _claude.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+            ))
+            return response.content[0].text
+        except Exception as e:
+            raise RuntimeError(f"Claude Fehler: {e}")
 
-    try:
-        resp = await http.post(
-            f"{GROQ_BASE_URL}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type":  "application/json",
-            },
-            json=payload,
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
-    except httpx.ConnectError:
-        raise RuntimeError("Groq nicht erreichbar — bitte Internetverbindung prüfen.")
-    except httpx.HTTPStatusError as e:
-        body = e.response.text[:300]
-        raise RuntimeError(f"Groq Fehler {e.response.status_code}: {body}")
-    except Exception as e:
-        raise RuntimeError(f"Groq Fehler: {e}")
+    else:  # venice or groq
+        base_url = VENICE_BASE_URL if ACTIVE_PROVIDER == "venice" else GROQ_BASE_URL
+        api_key  = VENICE_API_KEY  if ACTIVE_PROVIDER == "venice" else GROQ_API_KEY
+        model    = VENICE_MODEL    if ACTIVE_PROVIDER == "venice" else GROQ_MODEL
+        try:
+            resp = await http.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": [{"role": "system", "content": system}] + messages,
+                      "max_tokens": max_tokens, "temperature": 0.7},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            raise RuntimeError(f"{ACTIVE_PROVIDER.capitalize()} Fehler: {e}")
 
 # ─── TTS (edge-tts → OGG/Opus via ffmpeg) ─────────────────────────────────────
 async def synthesize_speech(text: str) -> bytes:
@@ -492,10 +501,28 @@ async def websocket_endpoint(ws: WebSocket):
             user_text = data.get("text", "").strip()
             if not user_text:
                 continue
-            # Stop command — silence Jarvis immediately
+            # Stop command
             stop_words = {"stop", "schweig", "schweigen", "ruhig", "stille", "halt", "stopp"}
             if any(w in user_text.lower() for w in stop_words):
                 await broadcast({"type": "stop"})
+                continue
+
+            # Model switch command
+            global ACTIVE_PROVIDER
+            txt_lower = user_text.lower()
+            switched  = None
+            if any(w in txt_lower for w in ("venice",)):
+                ACTIVE_PROVIDER = "venice"; switched = f"Venice ({VENICE_MODEL})"
+            elif any(w in txt_lower for w in ("claude", "anthropic")):
+                ACTIVE_PROVIDER = "claude"; switched = f"Claude ({ANTHROPIC_MODEL})"
+            elif any(w in txt_lower for w in ("groq",)):
+                ACTIVE_PROVIDER = "groq";   switched = f"Groq ({GROQ_MODEL})"
+            if switched:
+                conversations.clear()  # fresh context for new model
+                msg   = f"Modell gewechselt zu {switched}, Sir."
+                audio = await synthesize_speech(msg)
+                await broadcast_audio(msg, audio)
+                print(f"  [model] switched to {ACTIVE_PROVIDER}", flush=True)
                 continue
             print(f"  You: {user_text}", flush=True)
             await process_message(session_id, user_text, ws)
@@ -516,8 +543,9 @@ async def serve_index():
 if __name__ == "__main__":
     import uvicorn
     print("=" * 50, flush=True)
-    print(" J.A.R.V.I.S. V2 — Groq Edition", flush=True)
-    print(f" Modell: {GROQ_MODEL}", flush=True)
+    print(" J.A.R.V.I.S. V2 — Multi-Model Edition", flush=True)
+    print(f" Standard: Claude ({ANTHROPIC_MODEL})", flush=True)
+    print(f" Verfügbar: Venice ({VENICE_MODEL}), Groq ({GROQ_MODEL})", flush=True)
     print(f" http://localhost:8340", flush=True)
     print("=" * 50, flush=True)
     uvicorn.run(app, host="0.0.0.0", port=8340)
