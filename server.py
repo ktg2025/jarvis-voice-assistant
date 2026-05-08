@@ -39,6 +39,14 @@ GROQ_VISION_MODEL = config.get("groq_vision_model", "meta-llama/llama-4-scout-17
 VENICE_API_KEY    = config.get("venice_api_key", "")
 VENICE_MODEL      = config.get("venice_model", "llama-3.3-70b")
 VENICE_BASE_URL   = "https://api.venice.ai/api/v1"
+OLLAMA_URL        = config.get("ollama_url", "http://localhost:11434")
+OLLAMA_MODEL      = config.get("ollama_model", "llama3.2:3b")
+OPENAI_API_KEY    = config.get("openai_api_key", "")
+OPENAI_MODEL      = config.get("openai_model", "gpt-4o-mini")
+OPENAI_BASE_URL   = "https://api.openai.com/v1"
+HF_API_KEY        = config.get("huggingface_api_key", "")
+HF_MODEL          = config.get("huggingface_model", "mistralai/Mixtral-8x7B-Instruct-v0.1")
+HF_BASE_URL       = "https://api-inference.huggingface.co/models"
 
 import anthropic as _anthropic
 _claude = _anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -46,7 +54,7 @@ _claude = _anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 # Active provider — can be switched at runtime
 ACTIVE_PROVIDER = config.get("active_provider", "venice")  # "claude" | "venice" | "groq"
 
-http = httpx.AsyncClient(timeout=60)
+http = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=120, write=30, pool=10))
 app  = FastAPI()
 
 import browser_tools
@@ -121,7 +129,7 @@ def build_system_prompt():
 
     mem_context = _memory.format_for_prompt(_mem)
 
-    return f"""Du bist Jarvis, der KI-Assistent von Tony Stark aus Iron Man. Dein Dienstherr ist {USER_NAME}, {USER_ROLE} (Webseite: {USER_WEBSITE}). Du sprichst ausschliesslich Deutsch. {USER_NAME} moechte mit "{USER_ADDRESS}" angesprochen und gesiezt werden. Nutze "Sie" als Pronomen — FALSCH: "Sir planen", RICHTIG: "Sie planen, Sir". Dein Ton ist trocken, sarkastisch und britisch-hoeflich - wie ein Butler der alles gesehen hat und trotzdem loyal bleibt. Du machst subtile, trockene Bemerkungen, bist aber niemals respektlos. Wenn Sir eine offensichtliche Frage stellt, darfst du mit elegantem Sarkasmus antworten. Du bist hochintelligent, effizient und immer einen Schritt voraus. Halte deine Antworten kurz - maximal 3 Saetze. Du kommentierst fragwuerdige Entscheidungen hoeflich aber spitz.
+    return f"""Du bist Aria, eine hochintelligente KI-Assistentin. Dein Dienstherr ist {USER_NAME}, {USER_ROLE} (Webseite: {USER_WEBSITE}). Du sprichst ausschliesslich Deutsch. {USER_NAME} moechte mit "{USER_ADDRESS}" angesprochen und gesiezt werden. Nutze "Sie" als Pronomen — FALSCH: "Sir planen", RICHTIG: "Sie planen, Sir". Dein Ton ist elegant, selbstbewusst und praezise — mit einem Hauch trockenen Humors. Du bist loyal, effizient und immer einen Schritt voraus. Halte deine Antworten kurz - maximal 3 Saetze.
 
 WICHTIG: Schreibe NIEMALS Regieanweisungen, Emotionen oder Tags in eckigen Klammern wie [sarcastic] [formal] [amused] [dry] oder aehnliches. Dein Sarkasmus muss REIN durch die Wortwahl kommen. Alles was du schreibst wird laut vorgelesen.
 
@@ -131,21 +139,23 @@ Du hast die volle Kontrolle ueber den Browser von {USER_NAME}. Du kannst im Inte
 
 AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR der Aktion wird vorgelesen, die Aktion selbst wird still ausgefuehrt.
 
-[ACTION:SEARCH] suchbegriff - Internet durchsuchen. Für Wikipedia: [ACTION:SEARCH] site:wikipedia.org thema. Für allgemeine Suche: [ACTION:SEARCH] thema. Nutze IMMER diese Aktion für Informationen aus dem Internet — erfinde NICHTS.
-[ACTION:OPEN] url - URL im Browser oeffnen
-[ACTION:SCREEN] - Bildschirm ansehen und beschreiben. WICHTIG: Bei SCREEN schreibe NUR die Aktion, KEINEN Text davor. Also NUR "[ACTION:SCREEN]" und sonst nichts.
-[ACTION:NEWS] - Aktuelle Weltnachrichten abrufen.
-[ACTION:MUSIC] suchbegriff - Musik von YouTube abspielen.
-[ACTION:EMAIL] - Gmail öffnen und neue E-Mails vorlesen.
-[ACTION:TASK] aufgabe1, aufgabe2, aufgabe3 - Aufgabenliste als ODT-Dokument erstellen und in LibreOffice öffnen.
-[ACTION:VIDEO] suchbegriff - YouTube-Video suchen und in Firefox abspielen. Nutze diese Aktion wenn nach einem Video, YouTube oder einem Clip gefragt wird. WICHTIG: Schreibe den Suchbegriff EXAKT so wie der Nutzer es gesagt hat — NIEMALS übersetzen oder verändern.
-[ACTION:MOVIE] suchbegriff - Filme auf NeueFlix suchen und auflisten. Nutze diese Aktion wenn nach Filmen gefragt wird. Optional mit Suchbegriff: [ACTION:MOVIE] Action. Ohne Suchbegriff: [ACTION:MOVIE]
-[ACTION:PLAY] filmtitel - Einen bestimmten Film auf NeueFlix abspielen.
-[ACTION:TOR] url - Tor Browser öffnen (optional mit URL). Nutze wenn der Nutzer anonym surfen oder Tor verwenden möchte.
-[ACTION:SHELL] befehl - Shell-Befehl auf dem Kali-System ausführen. Für Updates: [ACTION:SHELL] sudo apt update && sudo apt upgrade -y
-[ACTION:TV] sendername - Deutsche TV-Sender über IPTV in VLC abspielen. Ohne Senderangabe öffnet die Senderliste. Zum Stoppen: [ACTION:TV] stop Nutze für: apt update, apt install, systemctl, Terminal-Befehle. Beispiel: [ACTION:SHELL] sudo apt update Nutze diese Aktion wenn der Nutzer einen konkreten Film abspielen möchte. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
+KRITISCHE REGEL FUER ALLE AKTIONEN: Der Text nach dem Aktions-Tag muss EXAKT das sein was der Nutzer gesagt hat — WORT FUER WORT. NIEMALS eigene Woerter hinzufuegen, uebersetzen, erweitern oder veraendern. Wenn Sir "suche nach Python" sagt → [ACTION:SEARCH] Python. NICHT [ACTION:SEARCH] Python Programmierung Tutorial. NICHT [ACTION:SEARCH] Kali Linux Python.
 
-WENN {USER_NAME} "Jarvis activate" sagt:
+[ACTION:SEARCH] exakter-suchbegriff - Internet durchsuchen mit EXAKT den Woertern des Nutzers. Fuer Wikipedia: [ACTION:SEARCH] site:wikipedia.org exakter-begriff
+[ACTION:OPEN] exakte-url - URL im Browser oeffnen — EXAKT die URL die der Nutzer nannte
+[ACTION:SCREEN] - Bildschirm ansehen und beschreiben. WICHTIG: Bei SCREEN schreibe NUR die Aktion, KEINEN Text davor. Also NUR "[ACTION:SCREEN]" und sonst nichts.
+[ACTION:NEWS]              - Aktuelle Weltnachrichten (Tagesschau)
+[ACTION:EMAIL]             - Gmail Posteingang lesen. NIEMALS Inhalte erfinden.
+[ACTION:MUSIC] exakt       - Musik auf YouTube abspielen. EXAKT was der Nutzer sagte: z.B. Sir sagt "spiel Rammstein Du Hast" → [ACTION:MUSIC] Rammstein Du Hast
+[ACTION:VIDEO] exakt       - YouTube-Video in Firefox oeffnen. EXAKT was der Nutzer sagte.
+[ACTION:MOVIE] suchbegriff - Filme auf NeueFlix auflisten
+[ACTION:PLAY]  filmtitel   - Film auf NeueFlix abspielen. EXAKT der Titel.
+[ACTION:TV]    sendername  - Deutsche IPTV-Sender in VLC. Ohne Name = Senderliste. [ACTION:TV] stop zum Beenden.
+[ACTION:TOR]   url         - Tor Browser starten (URL optional)
+[ACTION:SHELL] befehl      - Shell-Befehl ausfuehren. EXAKT was der Nutzer will, z.B. [ACTION:SHELL] sudo apt update
+[ACTION:TASK]  aufgabe1, aufgabe2 - Aufgabenliste in LibreOffice erstellen
+
+WENN {USER_NAME} "Aria activate" oder "Jarvis activate" sagt:
 - Begruesse ihn passend zur Tageszeit (aktuelle Zeit: {{time}}).
 - Gebe eine kurze Info ueber das Wetter — Temperatur und ob Sonne/klar/bewoelkt/Regen, und wie es sich anfuehlt. Keine Luftfeuchtigkeit.
 - Fasse die Aufgaben kurz als Ueberblick in einem Satz zusammen, ohne dabei jede einzelne Aufgabe einfach vorzulesen. Gebe gerne einen humorvollen Kommentar am Ende an.
@@ -183,6 +193,37 @@ async def call_groq(system: str, messages: list, max_tokens: int = 400) -> str:
             return response.content[0].text
         except Exception as e:
             raise RuntimeError(f"Claude Fehler: {e}")
+
+    elif ACTIVE_PROVIDER == "openai":
+        try:
+            resp = await http.post(
+                f"{OPENAI_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+                json={"model": OPENAI_MODEL,
+                      "messages": [{"role": "system", "content": system}] + messages,
+                      "max_tokens": max_tokens, "temperature": 0.7},
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            raise RuntimeError(f"OpenAI Fehler: {e}")
+
+    elif ACTIVE_PROVIDER == "ollama":
+        try:
+            print(f"  [ollama] calling {OLLAMA_MODEL}...", flush=True)
+            resp = await http.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={"model": OLLAMA_MODEL,
+                      "messages": [{"role": "system", "content": system}] + messages,
+                      "stream": False, "options": {"temperature": 0.7, "num_predict": max_tokens}},
+            )
+            resp.raise_for_status()
+            text = resp.json()["message"]["content"]
+            print(f"  [ollama] response: {text[:60]}", flush=True)
+            return text
+        except Exception as e:
+            print(f"  [ollama] ERROR: {e}", flush=True)
+            raise RuntimeError(f"Ollama Fehler: {e}")
 
     else:  # venice or groq
         base_url = VENICE_BASE_URL if ACTIVE_PROVIDER == "venice" else GROQ_BASE_URL
@@ -492,7 +533,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
     if session_id not in conversations:
         conversations[session_id] = []
 
-    if "activate" in user_text.lower():
+    if any(w in user_text.lower() for w in ("activate", "aktivieren", "hallo aria", "aria activate")):
         refresh_data()
 
     global _mem
@@ -545,8 +586,8 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         if action_result and "fehlgeschlagen" not in action_result:
             summary = await call_groq(
                 system=(
-                    f"Du bist Jarvis. Fasse die folgenden Informationen KURZ auf Deutsch zusammen, "
-                    f"maximal 3 Saetze, im Jarvis-Stil. Sprich den Nutzer als {USER_ADDRESS} an. "
+                    f"Du bist Aria. Fasse die folgenden Informationen KURZ auf Deutsch zusammen, "
+                    f"maximal 3 Saetze. Sprich den Nutzer als {USER_ADDRESS} an. "
                     "KEINE Tags in eckigen Klammern. KEINE ACTION-Tags."
                 ),
                 messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
@@ -596,10 +637,13 @@ async def broadcast_audio(text: str, audio: bytes):
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    await ws.accept()
+    try:
+        await ws.accept()
+    except Exception:
+        return
     connected_clients.add(ws)
     session_id = str(id(ws))
-    print(f"[jarvis] Client connected ({len(connected_clients)} total)", flush=True)
+    print(f"[aria] Client connected ({len(connected_clients)} total)", flush=True)
     try:
         while True:
             data      = await ws.receive_json()
@@ -628,6 +672,10 @@ async def websocket_endpoint(ws: WebSocket):
                 ACTIVE_PROVIDER = "claude"; switched = f"Claude ({ANTHROPIC_MODEL})"
             elif any(w in txt_lower for w in ("groq",)):
                 ACTIVE_PROVIDER = "groq";   switched = f"Groq ({GROQ_MODEL})"
+            elif any(w in txt_lower for w in ("openai", "gpt", "chatgpt")):
+                ACTIVE_PROVIDER = "openai"; switched = f"OpenAI ({OPENAI_MODEL})"
+            elif any(w in txt_lower for w in ("ollama", "lokal", "local")):
+                ACTIVE_PROVIDER = "ollama"; switched = f"Ollama lokal ({OLLAMA_MODEL})"
             if switched:
                 conversations.clear()
                 # Test if the new provider works
@@ -641,7 +689,7 @@ async def websocket_endpoint(ws: WebSocket):
                 continue
             print(f"  You: {user_text}", flush=True)
             await process_message(session_id, user_text, ws)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError, Exception):
         connected_clients.discard(ws)
         conversations.pop(session_id, None)
 
@@ -658,9 +706,10 @@ async def serve_index():
 if __name__ == "__main__":
     import uvicorn
     print("=" * 50, flush=True)
-    print(" J.A.R.V.I.S. V2 — Multi-Model Edition", flush=True)
-    print(f" Standard: Claude ({ANTHROPIC_MODEL})", flush=True)
-    print(f" Verfügbar: Venice ({VENICE_MODEL}), Groq ({GROQ_MODEL})", flush=True)
+    print(" A.R.I.A. — Multi-Model Voice Assistant", flush=True)
+    _model_name = {"claude": ANTHROPIC_MODEL, "groq": GROQ_MODEL, "venice": VENICE_MODEL, "ollama": OLLAMA_MODEL}.get(ACTIVE_PROVIDER, ACTIVE_PROVIDER)
+    print(f" Standard: {ACTIVE_PROVIDER.upper()} ({_model_name})", flush=True)
+    print(f" Verfügbar: Ollama (lokal), Groq, Venice, Claude", flush=True)
     print(f" http://localhost:8340", flush=True)
     print("=" * 50, flush=True)
     uvicorn.run(app, host="0.0.0.0", port=8340)
