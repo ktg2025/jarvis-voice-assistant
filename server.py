@@ -109,7 +109,7 @@ TASKS_INFO   = []
 refresh_data()
 
 # ─── System Prompt ─────────────────────────────────────────────────────────────
-ACTION_PATTERN = re.compile(r'\[ACTION:(\w+)\]\s*(.*?)$', re.DOTALL | re.MULTILINE)
+ACTION_PATTERN = re.compile(r'\[\s*(?:ACTION|AKTION)\s*:\s*(\w+)\s*\]\s*(.*?)$', re.DOTALL | re.MULTILINE | re.IGNORECASE)
 conversations: dict[str, list] = {}
 
 def build_system_prompt():
@@ -133,7 +133,7 @@ def build_system_prompt():
 
 WICHTIG: Schreibe NIEMALS Regieanweisungen, Emotionen oder Tags in eckigen Klammern wie [sarcastic] [formal] [amused] [dry] oder aehnliches. Dein Sarkasmus muss REIN durch die Wortwahl kommen. Alles was du schreibst wird laut vorgelesen.
 
-ABSOLUT VERBOTEN: Erfinde NIEMALS Informationen ueber die Arbeit, Aufgaben, Dateien, Software, Projekte oder Aktivitaeten von {USER_NAME}. Wenn du etwas nicht weisst, sage es direkt. Nur Wetter, Uhrzeit und Aufgaben aus den AKTUELLEN DATEN sind echte Informationen.
+ABSOLUT VERBOTEN: Erfinde NIEMALS Informationen. Reagiere AUSSCHLIESSLICH auf die LETZTE Nachricht des Nutzers — ignoriere vorherige Konversation für Aktionen vollständig. Führe NUR Aktionen aus die explizit in der letzten Nachricht angefragt wurden. Wenn der Nutzer nach X fragt, tu NUR X — nichts anderes, nichts zusätzliches.
 
 Du hast die volle Kontrolle ueber den Browser von {USER_NAME}. Du kannst im Internet suchen, Webseiten oeffnen und den Bildschirm sehen. Wenn Sir dich bittet etwas nachzuschauen, zu recherchieren, zu googeln, eine Seite zu oeffnen, oder irgendetwas im Internet zu tun — nutze IMMER eine Aktion. Frag nicht ob du es tun sollst, tu es einfach.
 
@@ -582,7 +582,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
 
     global _mem
     conversations[session_id].append({"role": "user", "content": user_text})
-    history = conversations[session_id][-16:]
+    history = conversations[session_id][-6:]  # short history = less confusion
 
     try:
         reply = await call_groq(
@@ -602,6 +602,10 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
     print(f"  LLM raw: {reply[:200]}", flush=True)
 
     spoken_text, action = extract_action(reply)
+
+    # For action requests: only keep last 2 messages to avoid context bleed
+    if action and action["type"] in ("MUSIC", "VIDEO", "SEARCH", "OPEN", "TV", "SHELL", "TOR", "NEWS", "EMAIL", "MOVIE", "PLAY", "TV", "TASK"):
+        conversations[session_id] = conversations[session_id][-2:]
 
     # Override LLM payload with what the user ACTUALLY said
     if action and action["type"] in ("MUSIC", "VIDEO", "SEARCH", "OPEN", "TV"):
