@@ -166,7 +166,15 @@ function unlockAndGreet() {
   });
 }
 
-document.addEventListener('click',   unlockAndGreet, { once: true });
+document.addEventListener('click', () => {
+    if (!greeted) { unlockAndGreet(); return; }
+    // Already greeted — click stops speech and listens
+    if (isPlaying) {
+        stopAudio();
+        if (ws && ws.readyState === WebSocket.OPEN)
+            ws.send(JSON.stringify({ type: 'stop' }));
+    }
+}, { once: false });
 document.addEventListener('keydown', unlockAndGreet, { once: true });
 
 // ── WebSocket ──────────────────────────────────
