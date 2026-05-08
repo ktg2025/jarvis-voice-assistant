@@ -14,13 +14,33 @@ import time
 MODEL = whisper.load_model("turbo")
 SAMPLE_RATE = 16000
 SILENCE_THRESHOLD = 0.02
-SILENCE_DURATION = 2.0  # Sekunden Stille = Satz fertig
-MIN_DURATION = 0.5       # Mindestlänge einer Aufnahme
+SILENCE_DURATION = 2.0
+MIN_DURATION = 0.5
 
 print("🎤 Whisper Mikrofon aktiv — spreche mit Jarvis!")
 print("   Drücke CTRL+C zum Beenden\n")
 
 ws = None
+jarvis_speaking = False  # True while Jarvis plays audio — mutes mic to avoid feedback
+
+def drain_responses():
+    """Read and discard server responses to keep the WebSocket buffer clear."""
+    global jarvis_speaking
+    while True:
+        try:
+            raw = ws.recv()
+            msg = json.loads(raw)
+            # Use audio presence as signal that Jarvis is speaking
+            if msg.get("audio"):
+                jarvis_speaking = True
+                audio_ms = len(msg["audio"]) / 1.3  # rough ms estimate
+                threading.Timer(audio_ms / 1000 + 0.5, _done_speaking).start()
+        except Exception:
+            time.sleep(0.1)
+
+def _done_speaking():
+    global jarvis_speaking
+    jarvis_speaking = False
 
 def connect_ws():
     global ws
@@ -28,6 +48,9 @@ def connect_ws():
         try:
             ws = websocket.create_connection("ws://localhost:8340/ws")
             print("✅ Mit JARVIS verbunden")
+            # Start response-draining thread for this connection
+            t = threading.Thread(target=drain_responses, daemon=True)
+            t.start()
             break
         except Exception:
             print("⏳ Warte auf JARVIS Server...")
@@ -43,7 +66,7 @@ def send_text(text):
         connect_ws()
 
 def record_until_silence():
-    """Nimmt auf bis Stille erkannt wird."""
+    """Record until silence detected, skipping while Jarvis is speaking."""
     chunks = []
     silent_chunks = 0
     speaking = False
@@ -53,6 +76,14 @@ def record_until_silence():
         print("🔴 Höre zu...", end='\r')
         while True:
             chunk, _ = stream.read(1024)
+
+            # Ignore mic input while Jarvis is speaking to prevent feedback
+            if jarvis_speaking:
+                speaking = False
+                chunks = []
+                silent_chunks = 0
+                continue
+
             volume = np.abs(chunk).mean()
 
             if volume > SILENCE_THRESHOLD:
@@ -64,14 +95,13 @@ def record_until_silence():
                 silent_chunks += 1
                 if silent_chunks > int(SILENCE_DURATION * chunks_per_second):
                     break
-            
-            if len(chunks) > SAMPLE_RATE * 30:  # Max 30 Sekunden
+
+            if len(chunks) > SAMPLE_RATE * 30:
                 break
 
     return np.concatenate(chunks, axis=0).flatten() if chunks else None
 
 def transcribe(audio):
-    """Whisper transkription."""
     result = MODEL.transcribe(audio, language="de", fp16=False)
     return result["text"].strip()
 
@@ -82,13 +112,13 @@ while True:
         audio = record_until_silence()
         if audio is None or len(audio) < SAMPLE_RATE * MIN_DURATION:
             continue
-        
+
         print("🧠 Erkenne Sprache...", end='\r')
         text = transcribe(audio)
-        
+
         if text and len(text) > 2:
             send_text(text)
-        
+
     except KeyboardInterrupt:
         print("\n👋 Whisper beendet")
         break
