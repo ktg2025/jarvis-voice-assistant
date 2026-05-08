@@ -528,6 +528,50 @@ async def screen_capture_with_groq() -> str:
     except Exception as e:
         return f"Screenshot-Fehler: {e}"
 
+# ─── Extract real query from user speech (overrides LLM payload) ──────────────
+def extract_user_query(action_type: str, user_text: str) -> str:
+    """Extract what the user ACTUALLY asked for, ignoring LLM rewriting."""
+    import re
+    t = user_text.strip()
+
+    patterns = {
+        "MUSIC": [
+            r"spiel(?:e|en)?\s+(?:mir\s+)?(?:etwas\s+)?(?:von\s+)?(.+)",
+            r"musik\s+(?:von\s+)?(.+)",
+            r"h[oö]re?\s+(?:mir\s+)?(?:etwas\s+)?(?:von\s+)?(.+)",
+            r"song\s+(?:von\s+)?(.+)",
+        ],
+        "VIDEO": [
+            r"(?:spiel|zeig|öffne|such)(?:e|en)?\s+(?:mir\s+)?(?:das\s+)?video\s+(.+)",
+            r"youtube\s+(.+)",
+        ],
+        "SEARCH": [
+            r"such(?:e|en)?\s+(?:nach\s+)?(?:auf\s+\w+\s+)?(?:nach\s+)?(.+)",
+            r"recherchier(?:e|en)?\s+(?:über\s+)?(.+)",
+            r"was\s+(?:ist|sind|weisst)\s+(?:du\s+über\s+)?(.+)",
+            r"erkl[äa]r(?:e|en)?\s+(?:mir\s+)?(.+)",
+        ],
+        "OPEN": [
+            r"[öo]ff?ne[nt]?\s+(.+)",
+            r"geh(?:e|en)?\s+(?:auf|zu)\s+(.+)",
+            r"zeig\s+(?:mir\s+)?(?:die\s+)?(?:seite\s+)?(.+)",
+        ],
+        "TV": [
+            r"(?:starte|zeig|schalte|öffne)\s+(?:tv|fernsehen|kanal|sender)?\s*(.+)?",
+            r"(?:tv|fernsehen)\s+(.+)?",
+        ],
+    }
+
+    for pat in patterns.get(action_type, []):
+        m = re.search(pat, t, re.IGNORECASE)
+        if m and m.group(1) and len(m.group(1).strip()) > 1:
+            q = m.group(1).strip().rstrip(".,!?")
+            # Remove trailing noise words
+            q = re.sub(r'\s+(bitte|mal|doch|mir|an)$', '', q, flags=re.IGNORECASE).strip()
+            return q
+
+    return ""  # could not extract — keep LLM payload
+
 # ─── Message Processing ────────────────────────────────────────────────────────
 async def process_message(session_id: str, user_text: str, ws: WebSocket):
     if session_id not in conversations:
@@ -558,6 +602,13 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
     print(f"  LLM raw: {reply[:200]}", flush=True)
 
     spoken_text, action = extract_action(reply)
+
+    # Override LLM payload with what the user ACTUALLY said
+    if action and action["type"] in ("MUSIC", "VIDEO", "SEARCH", "OPEN", "TV"):
+        real_query = extract_user_query(action["type"], user_text)
+        if real_query:
+            print(f"  Query override: '{action['payload'][:40]}' → '{real_query}'", flush=True)
+            action["payload"] = real_query
 
     # Hauptantwort sprechen
     if spoken_text:
