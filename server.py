@@ -143,8 +143,8 @@ KRITISCHE REGEL FUER ALLE AKTIONEN: Der Text nach dem Aktions-Tag muss EXAKT das
 
 [ACTION:SEARCH] exakter-suchbegriff - Internet durchsuchen mit EXAKT den Woertern des Nutzers. Fuer Wikipedia: [ACTION:SEARCH] site:wikipedia.org exakter-begriff
 [ACTION:OPEN] exakte-url - URL im Browser oeffnen — EXAKT die URL die der Nutzer nannte
-[ACTION:SCREEN] - Bildschirm ansehen und beschreiben. WICHTIG: Bei SCREEN schreibe NUR die Aktion, KEINEN Text davor. Also NUR "[ACTION:SCREEN]" und sonst nichts.
-[ACTION:NEWS]              - Aktuelle Weltnachrichten (Tagesschau)
+[ACTION:SCREEN] - Bildschirm ansehen und beschreiben. NUR verwenden wenn der Nutzer EXPLIZIT fragt was auf dem Bildschirm zu sehen ist. NIEMALS automatisch oder ungefragt ausführen.
+[ACTION:NEWS]              - Aktuelle Weltnachrichten (Tagesschau). NUR verwenden wenn der Nutzer EXPLIZIT nach Nachrichten, News oder aktuellen Ereignissen fragt. NIEMALS automatisch.
 [ACTION:EMAIL]             - Gmail Posteingang lesen. NIEMALS Inhalte erfinden.
 [ACTION:MUSIC] exakt       - Musik auf YouTube abspielen. EXAKT was der Nutzer sagte: z.B. Sir sagt "spiel Rammstein Du Hast" → [ACTION:MUSIC] Rammstein Du Hast
 [ACTION:VIDEO] exakt       - YouTube-Video in Firefox oeffnen. EXAKT was der Nutzer sagte.
@@ -565,6 +565,21 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         print(f"  Jarvis: {spoken_text[:80]}", flush=True)
         conversations[session_id].append({"role": "assistant", "content": spoken_text})
         await broadcast_audio(spoken_text, audio)
+
+    if action:
+        # Guard: only run SCREEN/NEWS if user explicitly requested them
+        txt = user_text.lower()
+        if action["type"] == "SCREEN":
+            print(f"  Action SCREEN disabled", flush=True)
+            action = None
+        elif action["type"] == "NEWS" and not any(w in txt for w in
+                ("news","nachrichten","aktuell","welt","tagesschau","was passiert")):
+            print(f"  Action NEWS blocked", flush=True)
+            action = None
+        elif action["type"] == "TASK" and not any(w in txt for w in
+                ("aufgabe","task","todo","liste","erstell","schreib","dokument")):
+            print(f"  Action TASK blocked", flush=True)
+            action = None
 
     if action:
         print(f"  Action: {action['type']} -> {action['payload'][:100]}", flush=True)
