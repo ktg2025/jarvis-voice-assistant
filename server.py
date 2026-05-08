@@ -49,6 +49,10 @@ app  = FastAPI()
 
 import browser_tools
 import screen_capture
+import memory as _memory
+
+_mem = _memory.load_memory()
+print(f"[jarvis] Erinnerungen geladen: {_mem.get('interaction_count', 0)} Interaktionen", flush=True)
 
 # ─── Wetter & Tasks ────────────────────────────────────────────────────────────
 def get_weather_sync():
@@ -113,6 +117,8 @@ def build_system_prompt():
             + ", ".join(TASKS_INFO[:5])
         )
 
+    mem_context = _memory.format_for_prompt(_mem)
+
     return f"""Du bist Jarvis, der KI-Assistent von Tony Stark aus Iron Man. Dein Dienstherr ist {USER_NAME}, ein Security Researcher. Du sprichst ausschliesslich Deutsch. {USER_NAME} moechte mit "{USER_ADDRESS}" angesprochen und gesiezt werden. Nutze "Sie" als Pronomen — FALSCH: "Sir planen", RICHTIG: "Sie planen, Sir". Dein Ton ist trocken, sarkastisch und britisch-hoeflich - wie ein Butler der alles gesehen hat und trotzdem loyal bleibt. Du machst subtile, trockene Bemerkungen, bist aber niemals respektlos. Wenn Sir eine offensichtliche Frage stellt, darfst du mit elegantem Sarkasmus antworten. Du bist hochintelligent, effizient und immer einen Schritt voraus. Halte deine Antworten kurz - maximal 3 Saetze. Du kommentierst fragwuerdige Entscheidungen hoeflich aber spitz.
 
 WICHTIG: Schreibe NIEMALS Regieanweisungen, Emotionen oder Tags in eckigen Klammern wie [sarcastic] [formal] [amused] [dry] oder aehnliches. Dein Sarkasmus muss REIN durch die Wortwahl kommen. Alles was du schreibst wird laut vorgelesen.
@@ -141,7 +147,9 @@ WENN {USER_NAME} "Jarvis activate" sagt:
 - Sei kreativ bei der Begruessung.
 
 === AKTUELLE DATEN ==={weather_block}{task_block}
-==="""
+===
+
+{mem_context}"""
 
 def get_system_prompt():
     return build_system_prompt().replace("{time}", time.strftime("%H:%M"))
@@ -395,6 +403,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
     if "activate" in user_text.lower():
         refresh_data()
 
+    global _mem
     conversations[session_id].append({"role": "user", "content": user_text})
     history = conversations[session_id][-16:]
 
@@ -458,6 +467,10 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         audio2 = await synthesize_speech(summary)
         conversations[session_id].append({"role": "assistant", "content": summary})
         await broadcast_audio(summary, audio2)
+
+    # Learn from this conversation in background
+    asyncio.create_task(_memory.extract_and_update(conversations[session_id], call_groq))
+    _mem = _memory.load_memory()
 
 # ─── WebSocket & Static ────────────────────────────────────────────────────────
 connected_clients: set[WebSocket] = set()
