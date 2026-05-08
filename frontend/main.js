@@ -8,6 +8,14 @@ let audioQueue = [];
 let isPlaying = false;
 let audioCtx = null;
 let greeted = false;
+let currentSource = null;
+
+function stopAudio() {
+    audioQueue = [];
+    isPlaying = false;
+    if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
+    setOrbState('listening');
+}
 
 function getAudioContext() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -40,6 +48,7 @@ function connect() {
     };
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        if (data.type === 'stop') { stopAudio(); return; }
         if (data.type === 'response') {
             addTranscript('jarvis', data.text);
             if (data.audio && data.audio.length > 0) {
@@ -80,6 +89,7 @@ function playNext() {
             source.buffer = buffer;
             source.connect(ctx.destination);
             source.onended = playNext;
+            currentSource = source;
             source.start(0);
         }, (err) => {
             console.error('[jarvis] decodeAudioData error:', err);

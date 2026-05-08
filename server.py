@@ -396,6 +396,11 @@ async def websocket_endpoint(ws: WebSocket):
             user_text = data.get("text", "").strip()
             if not user_text:
                 continue
+            # Stop command — silence Jarvis immediately
+            stop_words = {"stop", "schweig", "schweigen", "ruhig", "stille", "halt", "stopp"}
+            if any(w in user_text.lower() for w in stop_words):
+                await broadcast({"type": "stop"})
+                continue
             print(f"  You: {user_text}", flush=True)
             await process_message(session_id, user_text, ws)
     except WebSocketDisconnect:
