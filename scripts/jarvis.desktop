@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Jarvis Voice Assistant
+Exec=bash -c 'bash "$HOME/jarvis-voice-assistant/scripts/start-jarvis.sh"'
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
