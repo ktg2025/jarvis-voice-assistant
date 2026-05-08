@@ -33,8 +33,10 @@ def drain_responses():
             # Use audio presence as signal that Jarvis is speaking
             if msg.get("audio"):
                 jarvis_speaking = True
-                audio_ms = len(msg["audio"]) / 1.3  # rough ms estimate
-                threading.Timer(audio_ms / 1000 + 0.5, _done_speaking).start()
+                import base64
+                audio_bytes = len(base64.b64decode(msg["audio"]))
+                duration_s = audio_bytes / 16000 + 1.0  # 128kbps MP3 + 1s buffer
+                threading.Timer(duration_s, _done_speaking).start()
         except Exception:
             time.sleep(0.1)
 
