@@ -117,7 +117,8 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:SCREEN] - Bildschirm ansehen und beschreiben. WICHTIG: Bei SCREEN schreibe NUR die Aktion, KEINEN Text davor. Also NUR "[ACTION:SCREEN]" und sonst nichts.
 [ACTION:NEWS] - Aktuelle Weltnachrichten abrufen.
 [ACTION:MUSIC] suchbegriff - Musik von YouTube abspielen.
-[ACTION:EMAIL] - Gmail öffnen und neue E-Mails vorlesen. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
+[ACTION:EMAIL] - Gmail öffnen und neue E-Mails vorlesen.
+[ACTION:TASK] aufgabe1, aufgabe2, aufgabe3 - Aufgabenliste als ODT-Dokument erstellen und in LibreOffice öffnen. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
 
 WENN {USER_NAME} "Jarvis activate" sagt:
 - Begruesse ihn passend zur Tageszeit (aktuelle Zeit: {{time}}).
@@ -232,12 +233,49 @@ async def execute_action(action: dict) -> str:
     elif t == "EMAIL":
         return await browser_tools.fetch_emails()
 
+    elif t == "TASK":
+        return await create_task_document(p)
+
     elif t == "MUSIC":
         return await play_music(p)
 
     return ""
 
 vlc_process = None
+
+async def create_task_document(content: str) -> str:
+    """Create an ODT task list and open it in LibreOffice."""
+    import subprocess as sp, asyncio, re
+    from datetime import datetime
+    try:
+        from odf.opendocument import OpenDocumentText
+        from odf.text import H, P, List, ListItem
+
+        doc   = OpenDocumentText()
+        title = H(outlinelevel=1)
+        title.addText(f"Aufgabenliste — {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+        doc.text.addElement(title)
+
+        raw   = re.sub(r'^\d+[\.\)]\s*', '', content, flags=re.MULTILINE)
+        tasks = [t.strip() for t in re.split(r'[,\n;]+', raw) if t.strip()]
+
+        lst = List()
+        for task in tasks:
+            item = ListItem()
+            p    = P()
+            p.addText(f"☐  {task}")
+            item.addElement(p)
+            lst.addElement(item)
+        doc.text.addElement(lst)
+
+        path = os.path.expanduser(f"~/Dokumente/Aufgaben_{datetime.now().strftime('%Y%m%d_%H%M')}.odt")
+        doc.save(path)
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: sp.Popen(["libreoffice", "--writer", path]))
+        return f"Aufgabenliste mit {len(tasks)} Aufgaben erstellt und in LibreOffice geöffnet."
+    except Exception as e:
+        return f"Fehler beim Erstellen der Aufgabenliste: {e}"
 
 async def play_music(query: str) -> str:
     global vlc_process

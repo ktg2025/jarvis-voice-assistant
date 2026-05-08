@@ -1,7 +1,6 @@
 // Jarvis V2 — Frontend
 const orb = document.getElementById('orb');
 const status = document.getElementById('status');
-const transcript = document.getElementById('transcript');
 
 let ws;
 let audioQueue = [];
@@ -117,11 +116,7 @@ pttBtn.addEventListener('click', () => {
 function setOrbState(state) { orb.className = state; }
 
 function addTranscript(role, text) {
-    const div = document.createElement('div');
-    div.className = role;
-    div.textContent = role === 'user' ? `Du: ${text}` : `Jarvis: ${text}`;
-    transcript.appendChild(div);
-    transcript.scrollTop = transcript.scrollHeight;
+    // transcript display removed
 }
 
 connect();
