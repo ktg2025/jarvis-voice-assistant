@@ -151,36 +151,23 @@ async def fetch_news() -> str:
         return f"Nachrichten konnten nicht geladen werden: {e}"
 
 async def open_url(url: str):
-    ctx = await _get_browser()
-    page = await ctx.new_page()
-    try:
-        await page.goto(url, timeout=20000, wait_until="domcontentloaded")
-        _bring_to_front()
-    except Exception:
-        # Fallback: open in Firefox directly
-        subprocess.Popen(["firefox", url])
+    """Open URL in the user's system Firefox (not Playwright)."""
+    import asyncio, os
+    env = {"DISPLAY": ":0", "HOME": os.path.expanduser("~"), "PATH": "/usr/bin:/bin"}
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: subprocess.Popen(["firefox", url], env=env))
+    _bring_to_front()
     return {"success": True, "url": url}
 
 async def fetch_youtube_video(query: str) -> str:
-    """Search YouTube and open the first result in Firefox."""
-    ctx  = await _get_browser()
-    page = await ctx.new_page()
-    try:
-        search_url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
-        await page.goto(search_url, timeout=20000)
-        _bring_to_front()
-        await page.wait_for_timeout(2000)
-        # Click first video result
-        link = page.locator('a#video-title').first
-        if await link.count() > 0:
-            title = await link.get_attribute("title") or query
-            await link.click()
-            await page.wait_for_timeout(1000)
-            _bring_to_front()
-            return f"Spiele YouTube-Video: {title}"
-        return f"Kein YouTube-Video gefunden für: {query}"
-    except Exception as e:
-        return f"YouTube-Fehler: {e}"
+    """Search YouTube in the user's system Firefox."""
+    import asyncio, os, urllib.parse
+    search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
+    env = {"DISPLAY": ":0", "HOME": os.path.expanduser("~"), "PATH": "/usr/bin:/bin"}
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: subprocess.Popen(["firefox", search_url], env=env))
+    _bring_to_front()
+    return f"YouTube geöffnet — Suchergebnisse für: {query}"
 
 async def _get_movie_browser():
     global _movie_playwright, _movie_context

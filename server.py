@@ -133,7 +133,7 @@ def build_system_prompt():
 
 WICHTIG: Schreibe NIEMALS Regieanweisungen, Emotionen oder Tags in eckigen Klammern wie [sarcastic] [formal] [amused] [dry] oder aehnliches. Dein Sarkasmus muss REIN durch die Wortwahl kommen. Alles was du schreibst wird laut vorgelesen.
 
-ABSOLUT VERBOTEN: Erfinde NIEMALS Informationen. Reagiere AUSSCHLIESSLICH auf die LETZTE Nachricht des Nutzers — ignoriere vorherige Konversation für Aktionen vollständig. Führe NUR Aktionen aus die explizit in der letzten Nachricht angefragt wurden. Wenn der Nutzer nach X fragt, tu NUR X — nichts anderes, nichts zusätzliches.
+OBERSTE REGEL: Tue AUSSCHLIESSLICH was der Nutzer in der LETZTEN Nachricht explizit verlangt. KEINE zusätzlichen Aktionen, KEINE Eigeninitiative, KEINE Annahmen. Wenn der Nutzer "Wie ist das Wetter?" fragt — antworte NUR mit dem Wetter, öffne NICHTS, spiele NICHTS ab, suche NICHTS. Wenn der Nutzer "Spiel X" sagt — spiele NUR X. Eine Aktion pro Anfrage, exakt das was gefragt wurde, nichts mehr.
 
 Du hast die volle Kontrolle ueber den Browser von {USER_NAME}. Du kannst im Internet suchen, Webseiten oeffnen und den Bildschirm sehen. Wenn Sir dich bittet etwas nachzuschauen, zu recherchieren, zu googeln, eine Seite zu oeffnen, oder irgendetwas im Internet zu tun — nutze IMMER eine Aktion. Frag nicht ob du es tun sollst, tu es einfach.
 
@@ -173,7 +173,11 @@ def extract_action(text: str):
     match = ACTION_PATTERN.search(text)
     if match:
         clean = text[:match.start()].strip()
-        return clean, {"type": match.group(1), "payload": match.group(2).strip()}
+        # Strip any leftover action-like text (e.g. "Aktion: SCREEN" written as plain text)
+        clean = re.sub(r'\b[Aa]ktion\s*:\s*\w+\b', '', clean).strip()
+        return clean, {"type": match.group(1).upper(), "payload": match.group(2).strip()}
+    # Also strip plain-text action mentions from reply
+    text = re.sub(r'\b[Aa]ktion\s*:\s*\w+\b', '', text).strip()
     return text, None
 
 # ─── LLM Call (routes to active provider) ─────────────────────────────────────
@@ -592,9 +596,22 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         )
     except RuntimeError as e:
         error_msg = str(e)
-        print(f"  [Groq ERROR] {error_msg}", flush=True)
-        await broadcast({"type": "response", "text": error_msg, "audio": ""})
-        return
+        # Auto-fallback to Ollama on rate limit
+        if "429" in error_msg and ACTIVE_PROVIDER != "ollama":
+            print(f"  [fallback] Rate limited, switching to Ollama", flush=True)
+            old = ACTIVE_PROVIDER
+            globals()["ACTIVE_PROVIDER"] = "ollama"
+            try:
+                reply = await call_groq(system=get_system_prompt(), messages=history, max_tokens=400)
+                globals()["ACTIVE_PROVIDER"] = old
+            except RuntimeError as e2:
+                globals()["ACTIVE_PROVIDER"] = old
+                await broadcast({"type": "response", "text": str(e2), "audio": ""})
+                return
+        else:
+            print(f"  [LLM ERROR] {error_msg}", flush=True)
+            await broadcast({"type": "response", "text": error_msg, "audio": ""})
+            return
 
     if not reply:
         return
@@ -726,10 +743,19 @@ async def websocket_endpoint(ws: WebSocket):
             user_text = data.get("text", "").strip()
             if not user_text:
                 continue
-            # Stop command
+            # Stop command — stop browser audio AND any running media (VLC/music/TV)
             stop_words = {"stop", "schweig", "schweigen", "ruhig", "stille", "halt", "stopp"}
             if any(w in user_text.lower() for w in stop_words):
                 await broadcast({"type": "stop"})
+                # Kill any running VLC/music/TV processes
+                for proc_name in ("vlc_process", "_tv_process"):
+                    proc = globals().get(proc_name)
+                    if proc and getattr(proc, "returncode", -1) is None:
+                        try: proc.terminate()
+                        except: pass
+                import subprocess as _sp
+                _sp.run(["pkill", "-f", "cvlc"], capture_output=True)
+                _sp.run(["pkill", "-f", "vlc"], capture_output=True)
                 continue
 
             # Model switch command
