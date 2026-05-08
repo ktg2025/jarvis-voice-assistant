@@ -19,10 +19,10 @@ BROWSER_PROFILE = "/home/guru/.config/jarvis-browser"
 
 def _bring_to_front():
     try:
-        subprocess.run(["xdotool", "search", "--name", "Chromium", "windowactivate"], capture_output=True, timeout=2)
+        subprocess.run(["xdotool", "search", "--name", "Firefox", "windowactivate"], capture_output=True, timeout=2)
     except Exception:
         try:
-            subprocess.run(["wmctrl", "-a", "Chromium"], capture_output=True, timeout=2)
+            subprocess.run(["wmctrl", "-a", "Firefox"], capture_output=True, timeout=2)
         except Exception:
             pass
 
@@ -30,29 +30,22 @@ async def _get_browser():
     global _playwright, _browser, _context
     if _browser is None:
         _playwright = await async_playwright().start()
-        _browser = await _playwright.chromium.launch(
+        _browser = await _playwright.firefox.launch(
             headless=False,
-            args=["--start-maximized", "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
         )
-        _context = await _browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            no_viewport=True,
-        )
+        _context = await _browser.new_context(no_viewport=True)
     return _context
 
 async def _get_gmail_browser():
-    """Persistent browser context — saves Gmail session across restarts."""
+    """Persistent Firefox context — saves Gmail session across restarts."""
     global _gmail_playwright, _gmail_context
     if _gmail_context is None:
         import os
         os.makedirs(BROWSER_PROFILE, exist_ok=True)
         _gmail_playwright = await async_playwright().start()
-        _gmail_context = await _gmail_playwright.chromium.launch_persistent_context(
+        _gmail_context = await _gmail_playwright.firefox.launch_persistent_context(
             BROWSER_PROFILE,
             headless=False,
-            args=["--start-maximized", "--no-sandbox", "--disable-setuid-sandbox",
-                  "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             no_viewport=True,
         )
     return _gmail_context
