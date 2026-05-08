@@ -28,7 +28,7 @@ function connect() {
         console.log('[jarvis] WebSocket connected');
         status.textContent = 'Klicke einmal irgendwo, dann spricht Jarvis.';
         setOrbState('thinking');
-        ws.send(JSON.stringify({ text: 'Jarvis activate' }));
+        if (!sessionStorage.getItem("greeted")) { sessionStorage.setItem("greeted","1"); ws.send(JSON.stringify({ text: "Jarvis activate" })); }
     };
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -101,6 +101,7 @@ let isListening = false;
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
     recognition.lang = 'de-DE';
+    recognition.continuous = false;
     recognition.continuous = true;
     recognition.interimResults = false;
 
@@ -112,7 +113,7 @@ if (SpeechRecognition) {
                 addTranscript('user', text);
                 setOrbState('thinking');
                 status.textContent = 'Jarvis denkt nach...';
-                ws.send(JSON.stringify({ text }));
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ text })); else { connect(); setTimeout(() => ws.send(JSON.stringify({ text })), 1000); }
             }
         }
     };

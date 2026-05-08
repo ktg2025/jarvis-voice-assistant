@@ -1,45 +1,33 @@
 """
-Jarvis V2 — Screen Capture
-Takes screenshots and describes them via Claude Vision.
+Jarvis V2 — Screen Capture (Kali Linux Edition)
+Nutzt scrot statt ImageGrab, OpenRouter statt Anthropic.
 """
-
 import base64
 import io
-from PIL import ImageGrab
-
+import subprocess
+from PIL import Image
 
 def capture_screen() -> bytes:
-    """Capture the entire screen, return PNG bytes."""
-    img = ImageGrab.grab()
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+    """Capture screen using scrot, return JPEG bytes."""
+    screenshot_path = "/tmp/jarvis_screenshot.png"
+    try:
+        subprocess.run(["scrot", screenshot_path], check=True, capture_output=True)
+    except Exception:
+        try:
+            subprocess.run(["import", "-window", "root", screenshot_path], check=True, capture_output=True)
+        except Exception:
+            # Leeres Bild als Fallback
+            img = Image.new('RGB', (1920, 1080), color='black')
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG")
+            return buf.getvalue()
 
+    with Image.open(screenshot_path) as img:
+        img = img.resize((1280, 720), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=75)
+        return buf.getvalue()
 
-async def describe_screen(anthropic_client) -> str:
-    """Capture screen and describe it using Claude Vision."""
-    png_bytes = capture_screen()
-    b64 = base64.b64encode(png_bytes).decode("utf-8")
-
-    response = await anthropic_client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=300,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": b64,
-                    },
-                },
-                {
-                    "type": "text",
-                    "text": "Beschreibe kurz auf Deutsch was auf diesem Bildschirm zu sehen ist. Maximal 2-3 Saetze. Nenne die wichtigsten offenen Programme und Inhalte.",
-                },
-            ],
-        }],
-    )
-    return response.content[0].text
+async def describe_screen(client=None) -> str:
+    """Wird nicht mehr direkt genutzt — screen_capture_with_openrouter in server.py übernimmt das."""
+    return "Bitte screen_capture_with_openrouter() in server.py nutzen."
