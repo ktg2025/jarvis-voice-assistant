@@ -153,8 +153,8 @@ async def open_url(url: str):
         await page.goto(url, timeout=20000, wait_until="domcontentloaded")
         _bring_to_front()
     except Exception:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, webbrowser.open, url)
+        # Fallback: open in Firefox directly
+        subprocess.Popen(["firefox", url])
     return {"success": True, "url": url}
 
 async def close():
