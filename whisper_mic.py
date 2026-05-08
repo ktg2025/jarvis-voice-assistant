@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Lokale Spracheingabe mit Whisper — Push-to-Talk via Browser-Button.
-Wartet auf {"type": "ptt"} vom Server, nimmt dann auf und schickt Text zurück.
+Lokale Spracheingabe mit Whisper — Always-on mit Stummschaltung während Jarvis spricht.
 """
 import whisper
 import sounddevice as sd
@@ -9,30 +8,50 @@ import numpy as np
 import websocket
 import json
 import threading
+import base64
 import time
 
 MODEL = whisper.load_model("turbo")
 SAMPLE_RATE = 16000
 SILENCE_THRESHOLD = 0.02
-SILENCE_DURATION = 2.0
-MAX_DURATION = 30
+SILENCE_DURATION  = 2.0
+MIN_DURATION      = 0.5
+MAX_DURATION      = 30
 
-print("🎤 Whisper PTT aktiv — warte auf Browser-Button...")
+print("🎤 Whisper aktiv — Jarvis hört immer zu")
 print("   CTRL+C zum Beenden\n")
 
-ws = None
-ptt_event = threading.Event()
+ws            = None
+pending_audio = 0          # audio chunks still playing in browser
+mute_lock     = threading.Lock()
+
+def is_muted():
+    return pending_audio > 0
 
 def drain_responses():
-    """Listen for PTT triggers and drain audio responses."""
+    """Drain server responses; track audio playback to mute mic."""
+    global pending_audio
     while True:
         try:
             raw = ws.recv()
             msg = json.loads(raw)
+            # PTT trigger from browser — ignore (not needed in always-on mode)
             if msg.get("type") == "ptt":
-                ptt_event.set()
+                continue
+            audio_b64 = msg.get("audio", "")
+            if audio_b64:
+                audio_bytes = len(base64.b64decode(audio_b64))
+                duration_s  = audio_bytes / 44100 + 2.0  # WAV 22050Hz 16-bit mono + 2s buffer
+                with mute_lock:
+                    pending_audio += 1
+                threading.Timer(duration_s, _chunk_done).start()
         except Exception:
             time.sleep(0.1)
+
+def _chunk_done():
+    global pending_audio
+    with mute_lock:
+        pending_audio = max(0, pending_audio - 1)
 
 def connect_ws():
     global ws
@@ -56,27 +75,39 @@ def send_text(text):
         connect_ws()
 
 def record_until_silence():
-    chunks = []
+    """Record until silence, muted while Jarvis is speaking."""
+    chunks        = []
     silent_chunks = 0
-    speaking = False
-    chunks_per_second = SAMPLE_RATE // 1024
+    speaking      = False
+    cps           = SAMPLE_RATE // 1024  # chunks per second
 
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='float32', blocksize=1024) as stream:
-        print("🔴 Aufnahme...", end='\r')
+        print("🟢 Höre zu...", end='\r')
         start = time.time()
-        while time.time() - start < MAX_DURATION:
+        while time.time() - start < MAX_DURATION + 60:
             chunk, _ = stream.read(1024)
+
+            if is_muted():
+                # Reset any in-progress recording while Jarvis speaks
+                chunks        = []
+                silent_chunks = 0
+                speaking      = False
+                continue
+
             volume = np.abs(chunk).mean()
 
             if volume > SILENCE_THRESHOLD:
-                speaking = True
+                speaking      = True
                 silent_chunks = 0
                 chunks.append(chunk.copy())
             elif speaking:
                 chunks.append(chunk.copy())
                 silent_chunks += 1
-                if silent_chunks > int(SILENCE_DURATION * chunks_per_second):
+                if silent_chunks > int(SILENCE_DURATION * cps):
                     break
+
+            if len(chunks) > SAMPLE_RATE * MAX_DURATION:
+                break
 
     return np.concatenate(chunks, axis=0).flatten() if chunks else None
 
@@ -85,24 +116,18 @@ def transcribe(audio):
     return result["text"].strip()
 
 connect_ws()
-print("⏳ Warte auf PTT-Button im Browser...\n")
 
 while True:
     try:
-        ptt_event.wait()
-        ptt_event.clear()
-
         audio = record_until_silence()
-        if audio is None or len(audio) < SAMPLE_RATE * 0.3:
-            print("(nichts erkannt)")
+        if audio is None or len(audio) < SAMPLE_RATE * MIN_DURATION:
             continue
 
         print("🧠 Erkenne Sprache...", end='\r')
         text = transcribe(audio)
+
         if text and len(text) > 2:
             send_text(text)
-        else:
-            print("(nichts erkannt)")
 
     except KeyboardInterrupt:
         print("\n👋 Whisper beendet")
