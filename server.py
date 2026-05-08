@@ -361,24 +361,14 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         audio = await synthesize_speech(spoken_text)
         print(f"  Jarvis: {spoken_text[:80]}", flush=True)
         conversations[session_id].append({"role": "assistant", "content": spoken_text})
-        await broadcast({
-            "type":  "response",
-            "text":  spoken_text,
-            "audio": base64.b64encode(audio).decode("utf-8") if audio else "",
-        })
+        await broadcast_audio(spoken_text, audio)
 
-    # Action ausführen
     if action:
         print(f"  Action: {action['type']} -> {action['payload'][:100]}", flush=True)
 
         if action["type"] == "SCREEN":
-            hint       = "Lassen Sie mich einen Blick auf Ihren Bildschirm werfen."
-            hint_audio = await synthesize_speech(hint)
-            await broadcast({
-                "type":  "response",
-                "text":  hint,
-                "audio": base64.b64encode(hint_audio).decode("utf-8") if hint_audio else "",
-            })
+            hint_audio = await synthesize_speech("Lassen Sie mich einen Blick auf Ihren Bildschirm werfen.")
+            await broadcast_audio("Lassen Sie mich einen Blick auf Ihren Bildschirm werfen.", hint_audio)
 
         try:
             action_result = await execute_action(action)
@@ -406,11 +396,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
 
         audio2 = await synthesize_speech(summary)
         conversations[session_id].append({"role": "assistant", "content": summary})
-        await broadcast({
-            "type":  "response",
-            "text":  summary,
-            "audio": base64.b64encode(audio2).decode("utf-8") if audio2 else "",
-        })
+        await broadcast_audio(summary, audio2)
 
 # ─── WebSocket & Static ────────────────────────────────────────────────────────
 connected_clients: set[WebSocket] = set()
@@ -424,6 +410,16 @@ async def broadcast(payload: dict):
         except Exception:
             dead.add(client)
     connected_clients.difference_update(dead)
+
+async def broadcast_audio(text: str, audio: bytes):
+    """Broadcast audio_start, then response, to mute whisper before playback."""
+    if audio:
+        await broadcast({"type": "audio_start"})
+    await broadcast({
+        "type":  "response",
+        "text":  text,
+        "audio": base64.b64encode(audio).decode("utf-8") if audio else "",
+    })
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):

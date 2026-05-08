@@ -89,7 +89,6 @@ function playNext() {
             source.buffer = buffer;
             source.connect(ctx.destination);
             currentSource = source;
-            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "audio_start"}));
             source.onended = () => {
                 if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "audio_end"}));
                 playNext();
