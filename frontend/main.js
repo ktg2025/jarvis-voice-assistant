@@ -7,24 +7,36 @@ let ws;
 let audioQueue = [];
 let isPlaying = false;
 let audioCtx = null;
+let greeted = false;
 
 function getAudioContext() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
     return audioCtx;
 }
 
-// Unlock AudioContext on first user interaction
-document.addEventListener('click', () => getAudioContext(), { once: false });
-document.addEventListener('keydown', () => getAudioContext(), { once: false });
+function unlockAndGreet() {
+    const ctx = getAudioContext();
+    ctx.resume().then(() => {
+        if (!greeted) {
+            greeted = true;
+            status.textContent = '';
+            setOrbState('thinking');
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ text: "Jarvis activate" }));
+            }
+        }
+    });
+}
+
+document.addEventListener('click', unlockAndGreet, { once: true });
+document.addEventListener('keydown', unlockAndGreet, { once: true });
 
 function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
     ws.onopen = () => {
         console.log('[jarvis] WebSocket connected');
-        status.textContent = 'Klicke einmal irgendwo, dann spricht Jarvis.';
-        setOrbState('thinking');
-        if (!sessionStorage.getItem("greeted")) { sessionStorage.setItem("greeted","1"); ws.send(JSON.stringify({ text: "Jarvis activate" })); }
+        status.textContent = 'Klicke irgendwo — Jarvis erwacht.';
+        setOrbState('idle');
     };
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -33,11 +45,8 @@ function connect() {
             if (data.audio && data.audio.length > 0) {
                 queueAudio(data.audio);
             } else {
-                setOrbState('idle');
-                setTimeout(startListening, 500);
+                setOrbState('listening');
             }
-        } else if (data.type === 'status') {
-            status.textContent = data.text;
         }
     };
     ws.onclose = () => {
@@ -56,42 +65,28 @@ function playNext() {
         isPlaying = false;
         setOrbState('listening');
         status.textContent = '';
-        setTimeout(startListening, 500);
         return;
     }
     isPlaying = true;
     setOrbState('speaking');
-    status.textContent = '';
-    if (isListening) { recognition.stop(); isListening = false; }
 
     const b64 = audioQueue.shift();
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
     const ctx = getAudioContext();
-    ctx.decodeAudioData(bytes, (buffer) => {
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.onended = playNext;
-        source.start(0);
-    }, (err) => {
-        console.error('[jarvis] decodeAudioData error:', err);
-        playNext();
+
+    ctx.resume().then(() => {
+        ctx.decodeAudioData(bytes, (buffer) => {
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.onended = playNext;
+            source.start(0);
+        }, (err) => {
+            console.error('[jarvis] decodeAudioData error:', err);
+            playNext();
+        });
     });
 }
-
-// Speech input is handled by whisper_mic.py via WebSocket — no browser STT needed
-let isListening = false;
-
-function startListening() {
-    isListening = true;
-    setOrbState('listening');
-    status.textContent = '';
-}
-
-orb.addEventListener('click', () => {
-    setOrbState('listening');
-    status.textContent = '';
-});
 
 function setOrbState(state) { orb.className = state; }
 

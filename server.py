@@ -302,7 +302,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
     except RuntimeError as e:
         error_msg = str(e)
         print(f"  [Groq ERROR] {error_msg}", flush=True)
-        await ws.send_json({"type": "response", "text": error_msg, "audio": ""})
+        await broadcast({"type": "response", "text": error_msg, "audio": ""})
         return
 
     if not reply:
@@ -317,7 +317,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         audio = await synthesize_speech(spoken_text)
         print(f"  Jarvis: {spoken_text[:80]}", flush=True)
         conversations[session_id].append({"role": "assistant", "content": spoken_text})
-        await ws.send_json({
+        await broadcast({
             "type":  "response",
             "text":  spoken_text,
             "audio": base64.b64encode(audio).decode("utf-8") if audio else "",
@@ -330,7 +330,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         if action["type"] == "SCREEN":
             hint       = "Lassen Sie mich einen Blick auf Ihren Bildschirm werfen."
             hint_audio = await synthesize_speech(hint)
-            await ws.send_json({
+            await broadcast({
                 "type":  "response",
                 "text":  hint,
                 "audio": base64.b64encode(hint_audio).decode("utf-8") if hint_audio else "",
@@ -362,18 +362,31 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
 
         audio2 = await synthesize_speech(summary)
         conversations[session_id].append({"role": "assistant", "content": summary})
-        await ws.send_json({
+        await broadcast({
             "type":  "response",
             "text":  summary,
             "audio": base64.b64encode(audio2).decode("utf-8") if audio2 else "",
         })
 
 # ─── WebSocket & Static ────────────────────────────────────────────────────────
+connected_clients: set[WebSocket] = set()
+
+async def broadcast(payload: dict):
+    """Send a response to all connected clients (browser + whisper_mic)."""
+    dead = set()
+    for client in connected_clients:
+        try:
+            await client.send_json(payload)
+        except Exception:
+            dead.add(client)
+    connected_clients.difference_update(dead)
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
+    connected_clients.add(ws)
     session_id = str(id(ws))
-    print(f"[jarvis] Client connected", flush=True)
+    print(f"[jarvis] Client connected ({len(connected_clients)} total)", flush=True)
     try:
         while True:
             data      = await ws.receive_json()
@@ -383,6 +396,7 @@ async def websocket_endpoint(ws: WebSocket):
             print(f"  You: {user_text}", flush=True)
             await process_message(session_id, user_text, ws)
     except WebSocketDisconnect:
+        connected_clients.discard(ws)
         conversations.pop(session_id, None)
 
 app.mount(
