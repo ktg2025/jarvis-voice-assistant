@@ -141,7 +141,9 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:VIDEO] suchbegriff - YouTube-Video suchen und in Firefox abspielen. Nutze diese Aktion wenn nach einem Video, YouTube oder einem Clip gefragt wird. WICHTIG: Schreibe den Suchbegriff EXAKT so wie der Nutzer es gesagt hat — NIEMALS übersetzen oder verändern.
 [ACTION:MOVIE] suchbegriff - Filme auf NeueFlix suchen und auflisten. Nutze diese Aktion wenn nach Filmen gefragt wird. Optional mit Suchbegriff: [ACTION:MOVIE] Action. Ohne Suchbegriff: [ACTION:MOVIE]
 [ACTION:PLAY] filmtitel - Einen bestimmten Film auf NeueFlix abspielen.
-[ACTION:TOR] url - Tor Browser öffnen (optional mit URL). Nutze wenn der Nutzer anonym surfen oder Tor verwenden möchte. Nutze diese Aktion wenn der Nutzer einen konkreten Film abspielen möchte. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
+[ACTION:TOR] url - Tor Browser öffnen (optional mit URL). Nutze wenn der Nutzer anonym surfen oder Tor verwenden möchte.
+[ACTION:SHELL] befehl - Shell-Befehl auf dem Kali-System ausführen. Für Updates: [ACTION:SHELL] sudo apt update && sudo apt upgrade -y
+[ACTION:TV] sendername - Deutsche TV-Sender über IPTV in VLC abspielen. Ohne Senderangabe öffnet die Senderliste. Zum Stoppen: [ACTION:TV] stop Nutze für: apt update, apt install, systemctl, Terminal-Befehle. Beispiel: [ACTION:SHELL] sudo apt update Nutze diese Aktion wenn der Nutzer einen konkreten Film abspielen möchte. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
 
 WENN {USER_NAME} "Jarvis activate" sagt:
 - Begruesse ihn passend zur Tageszeit (aktuelle Zeit: {{time}}).
@@ -171,6 +173,7 @@ async def call_groq(system: str, messages: list, max_tokens: int = 400) -> str:
 
     if ACTIVE_PROVIDER == "claude":
         try:
+            loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(None, lambda: _claude.messages.create(
                 model=ANTHROPIC_MODEL,
                 max_tokens=max_tokens,
@@ -274,11 +277,72 @@ async def execute_action(action: dict) -> str:
     elif t == "MUSIC":
         return await play_music(p)
 
+    elif t == "SHELL":
+        return await run_shell(p)
+
+    elif t == "TV":
+        return await play_tv(p)
+
     return ""
+
+SUDO_PASSWORD    = config.get("sudo_password", "")
+IPTV_GERMAN_URL  = config.get("iptv_german_url", "https://iptv-org.github.io/iptv/languages/deu.m3u")
+
+async def run_shell(command: str) -> str:
+    import shlex
+    try:
+        if command.strip().startswith("sudo") and SUDO_PASSWORD:
+            cmd = f"echo {shlex.quote(SUDO_PASSWORD)} | sudo -S {command.lstrip('sudo').strip()}"
+        else:
+            cmd = command
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env={"HOME": os.path.expanduser("~"), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DISPLAY": ":0"},
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
+        output = stdout.decode("utf-8", errors="replace").strip()
+        print(f"  [shell] rc={proc.returncode} {command[:60]}", flush=True)
+        return f"Befehl: {command}\n{output[:1500]}" if output else f"Ausgeführt: {command}"
+    except asyncio.TimeoutError:
+        return f"Timeout: {command}"
+    except Exception as e:
+        return f"Shell-Fehler: {e}"
 
 TOR_BROWSER_PATH = os.path.expanduser(
     "~/.local/share/torbrowser/tbb/x86_64/tor-browser/Browser/start-tor-browser"
 )
+
+_tv_process = None
+
+async def play_tv(channel: str = "") -> str:
+    global _tv_process
+    import subprocess
+    try:
+        if _tv_process and _tv_process.returncode is None:
+            _tv_process.terminate()
+        if channel.strip().lower() in ("stop", "stopp", "aus"):
+            _tv_process = None
+            return "TV gestoppt."
+        # Play IPTV M3U — VLC will show channel list or play matching channel
+        if channel.strip():
+            # Try to find channel in M3U and play directly
+            cmd = ["cvlc", "--intf", "qt", f"--qt-start-maximized",
+                   f"#EXTM3U\n{channel}", IPTV_GERMAN_URL]
+            # Simpler: open VLC with M3U and let user pick, or search
+            _tv_process = subprocess.Popen(
+                ["vlc", "--playlist-autostart", IPTV_GERMAN_URL],
+                env={"DISPLAY": ":0", "HOME": os.path.expanduser("~"), "PATH": "/usr/bin:/bin"}
+            )
+        else:
+            _tv_process = subprocess.Popen(
+                ["vlc", "--playlist-autostart", IPTV_GERMAN_URL],
+                env={"DISPLAY": ":0", "HOME": os.path.expanduser("~"), "PATH": "/usr/bin:/bin"}
+            )
+        return f"TV gestartet mit deutschen Sendern{(' — suche nach: ' + channel) if channel.strip() else ''}."
+    except Exception as e:
+        return f"TV-Fehler: {e}"
 
 async def open_tor_browser(url: str = "") -> str:
     import asyncio
@@ -496,9 +560,15 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         conversations[session_id].append({"role": "assistant", "content": summary})
         await broadcast_audio(summary, audio2)
 
-    # Learn from this conversation in background
-    asyncio.create_task(_memory.extract_and_update(conversations[session_id], call_groq))
-    _mem = _memory.load_memory()
+    # Learn from this conversation in background (fire-and-forget, safe)
+    conv_snapshot = list(conversations.get(session_id, []))
+    async def _learn():
+        global _mem
+        try:
+            _mem = await _memory.extract_and_update(conv_snapshot, call_groq)
+        except Exception:
+            pass
+    asyncio.create_task(_learn())
 
 # ─── WebSocket & Static ────────────────────────────────────────────────────────
 connected_clients: set[WebSocket] = set()
@@ -559,8 +629,12 @@ async def websocket_endpoint(ws: WebSocket):
             elif any(w in txt_lower for w in ("groq",)):
                 ACTIVE_PROVIDER = "groq";   switched = f"Groq ({GROQ_MODEL})"
             if switched:
-                conversations.clear()  # fresh context for new model
-                msg   = f"Modell gewechselt zu {switched}, Sir."
+                conversations.clear()
+                # Test if the new provider works
+                if ACTIVE_PROVIDER == "claude" and not ANTHROPIC_API_KEY:
+                    msg = f"Claude API Key fehlt, Sir."
+                else:
+                    msg = f"Modell gewechselt zu {switched}, Sir."
                 audio = await synthesize_speech(msg)
                 await broadcast_audio(msg, audio)
                 print(f"  [model] switched to {ACTIVE_PROVIDER}", flush=True)
