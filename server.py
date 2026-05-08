@@ -390,6 +390,9 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             data      = await ws.receive_json()
+            if data.get("ptt"):
+                await broadcast({"type": "ptt"})
+                continue
             user_text = data.get("text", "").strip()
             if not user_text:
                 continue

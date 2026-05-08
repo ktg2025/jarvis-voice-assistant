@@ -88,6 +88,19 @@ function playNext() {
     });
 }
 
+const pttBtn = document.getElementById('pttBtn');
+pttBtn.addEventListener('click', () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ ptt: true }));
+        pttBtn.textContent = '🔴 Aufnahme...';
+        pttBtn.disabled = true;
+        setTimeout(() => {
+            pttBtn.textContent = '🎤 SPRECHEN';
+            pttBtn.disabled = false;
+        }, 6000);
+    }
+});
+
 function setOrbState(state) { orb.className = state; }
 
 function addTranscript(role, text) {

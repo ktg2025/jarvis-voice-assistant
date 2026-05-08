@@ -72,3 +72,20 @@ body {
 }
 #startBtn:hover { transform: scale(1.05); box-shadow: 0 0 60px #00d4ff; }
 #startBtn.hidden { display: none; }
+
+#pttBtn {
+  padding: 18px 44px;
+  font-size: 1.2rem;
+  background: linear-gradient(135deg, #00ff88 0%, #006633 100%);
+  color: #000;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  font-weight: bold;
+  letter-spacing: 2px;
+  box-shadow: 0 0 30px #00ff88;
+  transition: all 0.3s;
+  margin-top: 12px;
+}
+#pttBtn:hover { transform: scale(1.05); box-shadow: 0 0 50px #00ff88; }
+#pttBtn:disabled { opacity: 0.5; cursor: default; transform: none; }
