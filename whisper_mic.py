@@ -13,7 +13,7 @@ import time
 
 MODEL = whisper.load_model("turbo")
 SAMPLE_RATE = 16000
-SILENCE_THRESHOLD = 0.35
+SILENCE_THRESHOLD = 0.02
 SILENCE_DURATION = 2.0  # Sekunden Stille = Satz fertig
 MIN_DURATION = 0.5       # Mindestlänge einer Aufnahme
 
