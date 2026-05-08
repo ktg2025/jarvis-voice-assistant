@@ -6,21 +6,17 @@ const transcript = document.getElementById('transcript');
 let ws;
 let audioQueue = [];
 let isPlaying = false;
-let audioUnlocked = false;
+let audioCtx = null;
 
-// Unlock audio on ANY user interaction
-function unlockAudio() {
-    if (!audioUnlocked) {
-        const silent = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYZNIGPkAAAAAAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYZNIGPkAAAAAAAAAAAAAAAAAAAA');
-        silent.play().then(() => {
-            audioUnlocked = true;
-            console.log('[jarvis] Audio unlocked');
-        }).catch(() => {});
-    }
+function getAudioContext() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
 }
-document.addEventListener('click', unlockAudio, { once: false });
-document.addEventListener('touchstart', unlockAudio, { once: false });
-document.addEventListener('keydown', unlockAudio, { once: false });
+
+// Unlock AudioContext on first user interaction
+document.addEventListener('click', () => getAudioContext(), { once: false });
+document.addEventListener('keydown', () => getAudioContext(), { once: false });
 
 function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
@@ -66,93 +62,35 @@ function playNext() {
     isPlaying = true;
     setOrbState('speaking');
     status.textContent = '';
-    if (isListening) {
-        recognition.stop();
-        isListening = false;
-    }
+    if (isListening) { recognition.stop(); isListening = false; }
 
     const b64 = audioQueue.shift();
-    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: 'audio/ogg; codecs=opus' });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.onended = () => { URL.revokeObjectURL(url); playNext(); };
-    audio.onerror = () => { URL.revokeObjectURL(url); playNext(); };
-    audio.play().catch(err => {
-        console.warn('[jarvis] Autoplay blocked, waiting for click...');
-        status.textContent = 'Klicke irgendwo damit Jarvis sprechen kann.';
-        setOrbState('idle');
-        // Wait for click then retry
-        document.addEventListener('click', function retry() {
-            document.removeEventListener('click', retry);
-            audio.play().then(() => {
-                setOrbState('speaking');
-                status.textContent = '';
-            }).catch(() => playNext());
-        });
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
+    const ctx = getAudioContext();
+    ctx.decodeAudioData(bytes, (buffer) => {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.onended = playNext;
+        source.start(0);
+    }, (err) => {
+        console.error('[jarvis] decodeAudioData error:', err);
+        playNext();
     });
 }
 
-// Speech Recognition
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition;
+// Speech input is handled by whisper_mic.py via WebSocket — no browser STT needed
 let isListening = false;
 
-if (SpeechRecognition) {
-    recognition = new SpeechRecognition();
-    recognition.lang = 'de-DE';
-    recognition.continuous = false;
-    recognition.continuous = true;
-    recognition.interimResults = false;
-
-    recognition.onresult = (event) => {
-        const last = event.results[event.results.length - 1];
-        if (last.isFinal) {
-            const text = last[0].transcript.trim();
-            if (text) {
-                addTranscript('user', text);
-                setOrbState('thinking');
-                status.textContent = 'Jarvis denkt nach...';
-                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ text })); else { connect(); setTimeout(() => ws.send(JSON.stringify({ text })), 1000); }
-            }
-        }
-    };
-
-    recognition.onend = () => {
-        isListening = false;
-        if (!isPlaying) setTimeout(startListening, 300);
-    };
-
-    recognition.onerror = (event) => {
-        isListening = false;
-        if (event.error === 'no-speech' || event.error === 'aborted') {
-            if (!isPlaying) setTimeout(startListening, 300);
-        } else {
-            setTimeout(startListening, 1000);
-        }
-    };
-}
-
 function startListening() {
-    if (isPlaying) return;
-    try {
-        recognition.start();
-        isListening = true;
-        setOrbState('listening');
-        status.textContent = '';
-    } catch(e) {}
+    isListening = true;
+    setOrbState('listening');
+    status.textContent = '';
 }
 
 orb.addEventListener('click', () => {
-    if (isPlaying) return;
-    if (isListening) {
-        recognition.stop();
-        isListening = false;
-        setOrbState('idle');
-        status.textContent = 'Pausiert. Klicke zum Fortsetzen.';
-    } else {
-        startListening();
-    }
+    setOrbState('listening');
+    status.textContent = '';
 });
 
 function setOrbState(state) { orb.className = state; }
