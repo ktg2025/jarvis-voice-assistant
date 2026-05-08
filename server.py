@@ -113,7 +113,9 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:SEARCH] suchbegriff - Internet durchsuchen und Ergebnisse zusammenfassen
 [ACTION:OPEN] url - URL im Browser oeffnen
 [ACTION:SCREEN] - Bildschirm ansehen und beschreiben. WICHTIG: Bei SCREEN schreibe NUR die Aktion, KEINEN Text davor. Also NUR "[ACTION:SCREEN]" und sonst nichts.
-[ACTION:NEWS] - Aktuelle Weltnachrichten abrufen. Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
+[ACTION:NEWS] - Aktuelle Weltnachrichten abrufen.
+[ACTION:MUSIC] suchbegriff - Musik von YouTube abspielen.
+[ACTION:EMAIL] - Gmail öffnen und neue E-Mails vorlesen. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
 
 WENN {USER_NAME} "Jarvis activate" sagt:
 - Begruesse ihn passend zur Tageszeit (aktuelle Zeit: {{time}}).
@@ -225,7 +227,48 @@ async def execute_action(action: dict) -> str:
     elif t == "NEWS":
         return await browser_tools.fetch_news()
 
+    elif t == "EMAIL":
+        return await browser_tools.fetch_emails()
+
+    elif t == "MUSIC":
+        return await play_music(p)
+
     return ""
+
+vlc_process = None
+
+async def play_music(query: str) -> str:
+    global vlc_process
+    import asyncio, shutil
+    try:
+        # Stop any currently playing music
+        if vlc_process and vlc_process.returncode is None:
+            vlc_process.terminate()
+            vlc_process = None
+
+        if query.strip().lower() in ("stop", "stopp", "pause"):
+            return "Musik gestoppt."
+
+        loop = asyncio.get_event_loop()
+
+        # Get audio stream URL from YouTube
+        url = await loop.run_in_executor(None, lambda: __import__('subprocess').check_output(
+            ["yt-dlp", f"ytsearch1:{query}", "--get-url", "--format", "bestaudio", "--no-playlist"],
+            text=True, timeout=15
+        ).strip().split("\n")[0])
+
+        if not url:
+            return f"Kein Ergebnis für: {query}"
+
+        # Stream via cvlc (headless VLC)
+        vlc_process = await asyncio.create_subprocess_exec(
+            "cvlc", "--intf", "dummy", "--play-and-exit", url,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        return f"Spiele: {query}"
+    except Exception as e:
+        return f"Musik-Fehler: {e}"
 
 async def screen_capture_with_groq() -> str:
     """Screenshot machen und mit Groq Vision beschreiben."""

@@ -9,9 +9,13 @@ from urllib.parse import unquote, parse_qs, urlparse
 import httpx
 from playwright.async_api import async_playwright
 
-_playwright = None
-_browser = None
-_context = None
+_playwright     = None
+_browser        = None
+_context        = None
+_gmail_playwright = None
+_gmail_context  = None
+
+BROWSER_PROFILE = "/home/guru/.config/jarvis-browser"
 
 def _bring_to_front():
     try:
@@ -35,6 +39,69 @@ async def _get_browser():
             no_viewport=True,
         )
     return _context
+
+async def _get_gmail_browser():
+    """Persistent browser context — saves Gmail session across restarts."""
+    global _gmail_playwright, _gmail_context
+    if _gmail_context is None:
+        import os
+        os.makedirs(BROWSER_PROFILE, exist_ok=True)
+        _gmail_playwright = await async_playwright().start()
+        _gmail_context = await _gmail_playwright.chromium.launch_persistent_context(
+            BROWSER_PROFILE,
+            headless=False,
+            args=["--start-maximized", "--no-sandbox", "--disable-setuid-sandbox",
+                  "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            no_viewport=True,
+        )
+    return _gmail_context
+
+async def fetch_emails() -> str:
+    """Open Gmail in persistent browser, return unread email summaries."""
+    ctx = await _get_gmail_browser()
+    page = await ctx.new_page()
+    try:
+        await page.goto("https://mail.google.com/mail/u/0/#inbox", timeout=30000)
+        _bring_to_front()
+
+        # Check if login needed
+        await page.wait_for_timeout(3000)
+        url = page.url
+        if "accounts.google.com" in url or "signin" in url:
+            return "Bitte loggen Sie sich einmalig in Gmail ein — das Fenster ist geöffnet."
+
+        await page.wait_for_selector('[role="main"]', timeout=10000)
+
+        # Extract unread emails (bold rows = unread)
+        emails = await page.evaluate("""() => {
+            const rows = document.querySelectorAll('tr.zA');
+            const results = [];
+            for (const row of Array.from(rows).slice(0, 10)) {
+                const unread = row.classList.contains('zE');
+                const sender = row.querySelector('.yX')?.innerText || '';
+                const subject = row.querySelector('.y6')?.innerText || '';
+                const snippet = row.querySelector('.y2')?.innerText || '';
+                if (sender || subject) results.push({unread, sender, subject, snippet});
+            }
+            return results;
+        }""")
+
+        if not emails:
+            return "Keine E-Mails gefunden oder Gmail ist nicht erreichbar."
+
+        lines = []
+        unread_count = sum(1 for e in emails if e.get("unread"))
+        lines.append(f"{unread_count} ungelesene E-Mails:")
+        for e in emails:
+            marker = "● " if e.get("unread") else "○ "
+            lines.append(f'{marker}{e["sender"]}: {e["subject"]} — {e["snippet"][:60]}')
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Gmail-Fehler: {e}"
+    finally:
+        await page.close()
 
 async def search_and_read(query: str) -> dict:
     ctx = await _get_browser()
