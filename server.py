@@ -21,8 +21,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 with open(CONFIG_PATH, "r") as f:
     config = json.load(f)
 
-ELEVENLABS_API_KEY  = config.get("elevenlabs_api_key", "")
-ELEVENLABS_VOICE_ID = config.get("elevenlabs_voice_id", "rDmv3mOhK6TnhYWckFaD")
+TTS_VOICE = config.get("tts_voice", "de-DE-KillianNeural")
 USER_NAME           = config.get("user_name", "Julian")
 USER_ADDRESS        = config.get("user_address", "Sir")
 CITY                = config.get("city", "Hamburg")
@@ -171,52 +170,23 @@ async def call_groq(system: str, messages: list, max_tokens: int = 400) -> str:
     except Exception as e:
         raise RuntimeError(f"Groq Fehler: {e}")
 
-# ─── TTS (ElevenLabs) ─────────────────────────────────────────────────────────
+# ─── TTS (edge-tts) ───────────────────────────────────────────────────────────
 async def synthesize_speech(text: str) -> bytes:
     if not text.strip():
         return b""
-    if not ELEVENLABS_API_KEY:
-        # Kein ElevenLabs Key → stilles Audio zurückgeben
-        print("  [TTS] Kein ElevenLabs API Key — kein Audio", flush=True)
+    try:
+        import edge_tts
+        communicate = edge_tts.Communicate(text, TTS_VOICE)
+        audio_parts = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_parts.append(chunk["data"])
+        audio = b"".join(audio_parts)
+        print(f"  TTS ok: {len(audio)} bytes", flush=True)
+        return audio
+    except Exception as e:
+        print(f"  TTS error: {e}", flush=True)
         return b""
-
-    chunks = []
-    if len(text) > 250:
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        current = ""
-        for s in sentences:
-            if len(current) + len(s) > 250 and current:
-                chunks.append(current.strip())
-                current = s
-            else:
-                current = (current + " " + s).strip()
-        if current:
-            chunks.append(current.strip())
-    else:
-        chunks = [text]
-
-    audio_parts = []
-    for chunk in chunks:
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-        try:
-            resp = await http.post(url, headers={
-                "xi-api-key":    ELEVENLABS_API_KEY,
-                "Content-Type":  "application/json",
-                "Accept":        "audio/mpeg",
-            }, json={
-                "text":     chunk,
-                "model_id": "eleven_turbo_v2_5",
-                "voice_settings": {"stability": 0.5, "similarity_boost": 0.85},
-            })
-            print(f"  TTS chunk status: {resp.status_code}, size: {len(resp.content)}", flush=True)
-            if resp.status_code == 200:
-                audio_parts.append(resp.content)
-            else:
-                print(f"  TTS error: {resp.text[:200]}", flush=True)
-        except Exception as e:
-            print(f"  TTS EXCEPTION: {e}", flush=True)
-
-    return b"".join(audio_parts)
 
 # ─── Actions ───────────────────────────────────────────────────────────────────
 async def execute_action(action: dict) -> str:
