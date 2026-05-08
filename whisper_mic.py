@@ -35,7 +35,7 @@ def drain_responses():
                 jarvis_speaking = True
                 import base64
                 audio_bytes = len(base64.b64decode(msg["audio"]))
-                duration_s = audio_bytes / 16000 + 1.0  # 128kbps MP3 + 1s buffer
+                duration_s = audio_bytes / 6000 + 1.0  # ~48kbps OGG/Opus + 1s buffer
                 threading.Timer(duration_s, _done_speaking).start()
         except Exception:
             time.sleep(0.1)

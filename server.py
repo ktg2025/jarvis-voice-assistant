@@ -170,19 +170,25 @@ async def call_groq(system: str, messages: list, max_tokens: int = 400) -> str:
     except Exception as e:
         raise RuntimeError(f"Groq Fehler: {e}")
 
-# ─── TTS (edge-tts) ───────────────────────────────────────────────────────────
+# ─── TTS (edge-tts → OGG/Opus via ffmpeg) ─────────────────────────────────────
 async def synthesize_speech(text: str) -> bytes:
     if not text.strip():
         return b""
     try:
-        import edge_tts
+        import edge_tts, subprocess
         communicate = edge_tts.Communicate(text, TTS_VOICE)
-        audio_parts = []
+        mp3_parts = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
-                audio_parts.append(chunk["data"])
-        audio = b"".join(audio_parts)
-        print(f"  TTS ok: {len(audio)} bytes", flush=True)
+                mp3_parts.append(chunk["data"])
+        mp3 = b"".join(mp3_parts)
+        # Convert MP3 → OGG/Opus (Chromium on Linux has no MP3 codec)
+        result = subprocess.run(
+            ["ffmpeg", "-i", "pipe:0", "-c:a", "libopus", "-f", "ogg", "pipe:1"],
+            input=mp3, capture_output=True,
+        )
+        audio = result.stdout
+        print(f"  TTS ok: {len(mp3)}B mp3 → {len(audio)}B ogg", flush=True)
         return audio
     except Exception as e:
         print(f"  TTS error: {e}", flush=True)

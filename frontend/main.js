@@ -73,7 +73,7 @@ function playNext() {
 
     const b64 = audioQueue.shift();
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: 'audio/mpeg' });
+    const blob = new Blob([bytes], { type: 'audio/ogg; codecs=opus' });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.onended = () => { URL.revokeObjectURL(url); playNext(); };
