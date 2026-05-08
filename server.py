@@ -22,9 +22,11 @@ with open(CONFIG_PATH, "r") as f:
     config = json.load(f)
 
 TTS_VOICE = config.get("tts_voice", "de-DE-KillianNeural")
-USER_NAME           = config.get("user_name", "Julian")
+USER_NAME           = config.get("user_name", "Daniel")
 USER_ADDRESS        = config.get("user_address", "Sir")
-CITY                = config.get("city", "Hamburg")
+USER_ROLE           = config.get("user_role", "CEO von Synaptix Labs")
+USER_WEBSITE        = config.get("user_website", "222.synaptixlabs.ch")
+CITY                = config.get("city", "Melchnau")
 TASKS_FILE          = config.get("obsidian_inbox_path", "")
 
 # ─── LLM Provider Config ──────────────────────────────────────────────────────
@@ -119,7 +121,7 @@ def build_system_prompt():
 
     mem_context = _memory.format_for_prompt(_mem)
 
-    return f"""Du bist Jarvis, der KI-Assistent von Tony Stark aus Iron Man. Dein Dienstherr ist {USER_NAME}, ein Security Researcher. Du sprichst ausschliesslich Deutsch. {USER_NAME} moechte mit "{USER_ADDRESS}" angesprochen und gesiezt werden. Nutze "Sie" als Pronomen — FALSCH: "Sir planen", RICHTIG: "Sie planen, Sir". Dein Ton ist trocken, sarkastisch und britisch-hoeflich - wie ein Butler der alles gesehen hat und trotzdem loyal bleibt. Du machst subtile, trockene Bemerkungen, bist aber niemals respektlos. Wenn Sir eine offensichtliche Frage stellt, darfst du mit elegantem Sarkasmus antworten. Du bist hochintelligent, effizient und immer einen Schritt voraus. Halte deine Antworten kurz - maximal 3 Saetze. Du kommentierst fragwuerdige Entscheidungen hoeflich aber spitz.
+    return f"""Du bist Jarvis, der KI-Assistent von Tony Stark aus Iron Man. Dein Dienstherr ist {USER_NAME}, {USER_ROLE} (Webseite: {USER_WEBSITE}). Du sprichst ausschliesslich Deutsch. {USER_NAME} moechte mit "{USER_ADDRESS}" angesprochen und gesiezt werden. Nutze "Sie" als Pronomen — FALSCH: "Sir planen", RICHTIG: "Sie planen, Sir". Dein Ton ist trocken, sarkastisch und britisch-hoeflich - wie ein Butler der alles gesehen hat und trotzdem loyal bleibt. Du machst subtile, trockene Bemerkungen, bist aber niemals respektlos. Wenn Sir eine offensichtliche Frage stellt, darfst du mit elegantem Sarkasmus antworten. Du bist hochintelligent, effizient und immer einen Schritt voraus. Halte deine Antworten kurz - maximal 3 Saetze. Du kommentierst fragwuerdige Entscheidungen hoeflich aber spitz.
 
 WICHTIG: Schreibe NIEMALS Regieanweisungen, Emotionen oder Tags in eckigen Klammern wie [sarcastic] [formal] [amused] [dry] oder aehnliches. Dein Sarkasmus muss REIN durch die Wortwahl kommen. Alles was du schreibst wird laut vorgelesen.
 
@@ -129,7 +131,7 @@ Du hast die volle Kontrolle ueber den Browser von {USER_NAME}. Du kannst im Inte
 
 AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR der Aktion wird vorgelesen, die Aktion selbst wird still ausgefuehrt.
 
-[ACTION:SEARCH] suchbegriff - Internet durchsuchen und Ergebnisse zusammenfassen
+[ACTION:SEARCH] suchbegriff - Internet durchsuchen. Für Wikipedia: [ACTION:SEARCH] site:wikipedia.org thema. Für allgemeine Suche: [ACTION:SEARCH] thema. Nutze IMMER diese Aktion für Informationen aus dem Internet — erfinde NICHTS.
 [ACTION:OPEN] url - URL im Browser oeffnen
 [ACTION:SCREEN] - Bildschirm ansehen und beschreiben. WICHTIG: Bei SCREEN schreibe NUR die Aktion, KEINEN Text davor. Also NUR "[ACTION:SCREEN]" und sonst nichts.
 [ACTION:NEWS] - Aktuelle Weltnachrichten abrufen.
@@ -138,7 +140,8 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:TASK] aufgabe1, aufgabe2, aufgabe3 - Aufgabenliste als ODT-Dokument erstellen und in LibreOffice öffnen.
 [ACTION:VIDEO] suchbegriff - YouTube-Video suchen und in Firefox abspielen. Nutze diese Aktion wenn nach einem Video, YouTube oder einem Clip gefragt wird. WICHTIG: Schreibe den Suchbegriff EXAKT so wie der Nutzer es gesagt hat — NIEMALS übersetzen oder verändern.
 [ACTION:MOVIE] suchbegriff - Filme auf NeueFlix suchen und auflisten. Nutze diese Aktion wenn nach Filmen gefragt wird. Optional mit Suchbegriff: [ACTION:MOVIE] Action. Ohne Suchbegriff: [ACTION:MOVIE]
-[ACTION:PLAY] filmtitel - Einen bestimmten Film auf NeueFlix abspielen. Nutze diese Aktion wenn der Nutzer einen konkreten Film abspielen möchte. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
+[ACTION:PLAY] filmtitel - Einen bestimmten Film auf NeueFlix abspielen.
+[ACTION:TOR] url - Tor Browser öffnen (optional mit URL). Nutze wenn der Nutzer anonym surfen oder Tor verwenden möchte. Nutze diese Aktion wenn der Nutzer einen konkreten Film abspielen möchte. Nutze diese Aktion wenn nach Aufgaben, Todo, Task-Liste oder Dokument gefragt wird. Extrahiere die Aufgaben aus dem Gespräch und schreibe sie kommagetrennt nach der Aktion. Nutze diese Aktion wenn nach E-Mails, Nachrichten, Gmail oder Posteingang gefragt wird. WICHTIG: Erfinde NIEMALS E-Mail-Inhalte. Schreibe NUR "[ACTION:EMAIL]" ohne weiteren Text davor — die echten E-Mails werden danach vorgelesen. Nutze diese Aktion wenn nach Musik, einem Song, einer Band oder einem Künstler gefragt wird. Beispiel: [ACTION:MUSIC] Mozart Sinfonie. Um Musik zu stoppen: [ACTION:MUSIC] stop Nutze diese Aktion wenn nach News, Nachrichten, was in der Welt passiert, aktuelle Lage oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
 
 WENN {USER_NAME} "Jarvis activate" sagt:
 - Begruesse ihn passend zur Tageszeit (aktuelle Zeit: {{time}}).
@@ -265,10 +268,31 @@ async def execute_action(action: dict) -> str:
     elif t == "PLAY":
         return await browser_tools.play_movie(p)
 
+    elif t == "TOR":
+        return await open_tor_browser(p)
+
     elif t == "MUSIC":
         return await play_music(p)
 
     return ""
+
+TOR_BROWSER_PATH = os.path.expanduser(
+    "~/.local/share/torbrowser/tbb/x86_64/tor-browser/Browser/start-tor-browser"
+)
+
+async def open_tor_browser(url: str = "") -> str:
+    import asyncio
+    try:
+        cmd = [TOR_BROWSER_PATH]
+        if url.strip():
+            cmd.append(url.strip())
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: __import__('subprocess').Popen(
+            cmd, cwd=os.path.dirname(TOR_BROWSER_PATH)
+        ))
+        return f"Tor Browser gestartet{(' — öffne: ' + url) if url.strip() else ''}."
+    except Exception as e:
+        return f"Tor Browser Fehler: {e}"
 
 vlc_process = None
 
@@ -348,6 +372,10 @@ async def screen_capture_with_groq() -> str:
 
         screenshot_path = "/tmp/jarvis_screenshot.png"
         env = {"DISPLAY": ":0", "PATH": "/usr/bin:/bin"}
+        # Minimize all browser windows so we see the real desktop
+        subprocess.run(["xdotool", "search", "--name", "Firefox", "windowminimize", "--sync"],
+                       capture_output=True, env=env, timeout=2)
+        import time as _t; _t.sleep(0.5)
         try:
             subprocess.run(["scrot", screenshot_path], check=True, capture_output=True, env=env)
         except Exception:
