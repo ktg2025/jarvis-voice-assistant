@@ -182,13 +182,13 @@ async def synthesize_speech(text: str) -> bytes:
             if chunk["type"] == "audio":
                 mp3_parts.append(chunk["data"])
         mp3 = b"".join(mp3_parts)
-        # Convert MP3 → OGG/Opus (Chromium on Linux has no MP3 codec)
+        # Convert MP3 → WAV (universally supported, no codec dependency)
         result = subprocess.run(
-            ["ffmpeg", "-i", "pipe:0", "-c:a", "libopus", "-f", "ogg", "pipe:1"],
+            ["ffmpeg", "-i", "pipe:0", "-ar", "22050", "-ac", "1", "-f", "wav", "pipe:1"],
             input=mp3, capture_output=True,
         )
         audio = result.stdout
-        print(f"  TTS ok: {len(mp3)}B mp3 → {len(audio)}B ogg", flush=True)
+        print(f"  TTS ok: {len(mp3)}B mp3 → {len(audio)}B wav", flush=True)
         return audio
     except Exception as e:
         print(f"  TTS error: {e}", flush=True)
