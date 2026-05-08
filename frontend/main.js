@@ -88,8 +88,12 @@ function playNext() {
             const source = ctx.createBufferSource();
             source.buffer = buffer;
             source.connect(ctx.destination);
-            source.onended = playNext;
             currentSource = source;
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "audio_start"}));
+            source.onended = () => {
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "audio_end"}));
+                playNext();
+            };
             source.start(0);
         }, (err) => {
             console.error('[jarvis] decodeAudioData error:', err);

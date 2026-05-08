@@ -235,10 +235,11 @@ async def screen_capture_with_groq() -> str:
         import io
 
         screenshot_path = "/tmp/jarvis_screenshot.png"
+        env = {"DISPLAY": ":0", "PATH": "/usr/bin:/bin"}
         try:
-            subprocess.run(["scrot", screenshot_path], check=True, capture_output=True)
+            subprocess.run(["scrot", screenshot_path], check=True, capture_output=True, env=env)
         except Exception:
-            subprocess.run(["import", "-window", "root", screenshot_path], capture_output=True)
+            subprocess.run(["import", "-window", "root", screenshot_path], capture_output=True, env=env)
 
         with Image.open(screenshot_path) as img:
             img = img.resize((1280, 720), Image.LANCZOS)
@@ -392,6 +393,9 @@ async def websocket_endpoint(ws: WebSocket):
             data      = await ws.receive_json()
             if data.get("ptt"):
                 await broadcast({"type": "ptt"})
+                continue
+            if data.get("type") in ("audio_start", "audio_end"):
+                await broadcast(data)
                 continue
             user_text = data.get("text", "").strip()
             if not user_text:
